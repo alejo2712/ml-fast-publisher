@@ -1,36 +1,98 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# FastPublisher — Publicá en Mercado Libre más rápido
 
-## Getting Started
+MVP de publicación asistida para Mercado Libre, enfocado en electrodomésticos.
 
-First, run the development server:
+## ¿Qué hace?
+
+Reducís el esfuerzo de publicar un producto de **10+ pasos** a **3 pasos**:
+
+1. Escribís el nombre del producto
+2. El sistema infiere marca, categoría, condición, capacidad, color, etc.
+3. Completás solo los campos que faltan y exportás el JSON listo para ML
+
+## Setup
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Abrí [http://localhost:3000](http://localhost:3000)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Ejemplo
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Input: `Heladera Samsung no frost 320 litros blanca usada`
 
-## Learn More
+El sistema detecta:
+- Categoría: Heladera (MLA1577)
+- Marca: Samsung
+- Tecnología: No Frost
+- Capacidad: 320 L
+- Color: Blanco
+- Condición: Usado
+- Título sugerido: `Heladera Samsung No Frost 320 L Blanco Usado`
 
-To learn more about Next.js, take a look at the following resources:
+Luego te pide solo los campos faltantes (precio, modelo, foto) y genera el JSON listo para la API de ML.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Stack
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- Next.js 15 + TypeScript
+- Tailwind CSS
+- Motor de inferencia determinístico (reemplazable por Claude/GPT)
+- Sin backend — todo corre en el cliente
 
-## Deploy on Vercel
+## Arquitectura
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```
+src/
+  config/categories/     # Schemas de categorías (config-driven)
+  lib/
+    inference/           # Motor de inferencia (adaptador intercambiable)
+    payload-builder/     # Construye el payload ML
+    validation/          # Detecta campos faltantes
+  types/                 # Tipos compartidos
+  components/
+    AssistedPublisher/   # Flujo principal
+    ProductPreview/      # Vista previa editable
+    MissingFields/       # Formulario de campos faltantes
+    JsonPreview/         # Preview + export del JSON
+docs/
+  research/              # Investigación sobre estructura ML
+CLAUDE.md                # Contexto del proyecto para Claude Code
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Agregar nueva categoría
+
+1. Agregar en `src/config/categories/appliances.ts`
+2. Agregar keywords en `src/lib/inference/dictionaries.ts`
+3. Listo — todo lo demás es automático
+
+## TODO: Integración con IA
+
+El adaptador de inferencia está en `src/lib/inference/index.ts`.
+Para reemplazar el motor determinístico:
+
+```typescript
+export class ClaudeInferenceAdapter implements InferenceAdapter {
+  async infer(input: string): Promise<InferenceResult> {
+    // Llamar a Claude API con el input
+    // Parsear respuesta al formato InferenceResult
+  }
+}
+export const inferenceAdapter = new ClaudeInferenceAdapter();
+```
+
+## TODO: Integración con ML API
+
+Ver `docs/research/ml-listing-structure.md` para la estructura del payload.
+Requiere OAuth con ML Developer credentials.
+
+## Categorías soportadas (MVP)
+
+**Grandes:** Heladera, Lavarropas, Secadora, Lavavajillas, Horno, Cocina, Freezer
+
+**Pequeños:** Microondas, Freidora de Aire, Licuadora, Cafetera, Pava Eléctrica, Aspiradora, Plancha, Tostadora
+
+## Categorías futuras (roadmap)
+
+Celulares, Colchones, Sommiers, Sábanas, Almohadas, Bicicletas, Cochecitos, Skateboards, Monopatines eléctricos
