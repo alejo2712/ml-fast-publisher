@@ -1,4 +1,4 @@
-import { AssistedPublisher } from '@/components/AssistedPublisher';
+import { ModeShell } from '@/components/ModeShell';
 import { Zap } from 'lucide-react';
 
 export default function Home() {
@@ -22,7 +22,7 @@ export default function Home() {
       </header>
 
       <div className="max-w-4xl mx-auto px-4 py-6">
-        <AssistedPublisher />
+        <ModeShell />
       </div>
     </main>
   );

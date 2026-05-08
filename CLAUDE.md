@@ -37,6 +37,14 @@ MVP frontend that lets users publish products to Mercado Libre in FEWER steps th
 - Fully frontend-only for MVP
 - All inference runs client-side
 
+### CSV Bulk Mode
+- CSV column definitions live in `src/lib/csv/template.ts` — single source of truth for headers, examples, and hints
+- To add a CSV column: add one entry to `CSV_COLUMNS` in `template.ts` — parser picks it up automatically
+- Parser: `src/lib/csv/parser.ts` — `parseCsvText(text)` returns `CsvParseResult` with per-row status
+- Each row runs `inferProduct` → `buildProductDraft` → `buildMLPayload` → `getMissingFields` (all reused from single flow)
+- Downloadable template always reflects current `CSV_COLUMNS` — no maintenance needed
+- Export: `exportAllPayloads(rows)` dumps all valid rows as a JSON array
+
 ---
 
 ## ML Listing Structure (Key Fields)
@@ -60,14 +68,17 @@ ENERGY_EFFICIENCY, COOLING_TYPE, POWER_CONSUMPTION, TYPE
 ## Current Status
 - [x] Project scaffolded (Next.js 15, TypeScript, Tailwind)
 - [x] Core types, category config, inference engine, payload builder built
-- [x] Full UI flow built and pushed to GitHub
+- [x] Single-product assisted flow (text → infer → review → JSON export)
+- [x] CSV bulk mode (upload or paste → per-row inference → validation → bulk JSON export)
+- [x] Downloadable CSV template auto-generated from column definitions
+- [x] ModeShell: single-product / bulk toggle on main page
 
 ## Next Session Instructions
-1. Add Claude/OpenAI integration to replace deterministic inference
+1. Add Claude/OpenAI integration to replace deterministic inference (`src/lib/inference/index.ts` — swap adapter)
 2. Add image upload with vision-based inference
-3. Add CSV bulk upload flow
-4. Add categories: mobile phones, mattresses
-5. Consider real ML API integration (requires credentials)
+3. Add additional categories: mobile phones, mattresses
+4. Consider real ML API integration (requires OAuth credentials)
+5. Add inline field editing in the bulk results table (edit price/condition per row before export)
 
 ## Implementation Rules
 - NEVER hardcode attribute logic in UI components
