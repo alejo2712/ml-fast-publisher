@@ -30,12 +30,30 @@ MVP frontend that lets users publish products to Mercado Libre in FEWER steps th
 - ML listing structure: title, description, price, currency_id, condition, category_id, listing_type_id, attributes[], pictures[], shipping
 
 ### Validation
-- `src/lib/validation/` — Zod schemas per product type
-- Determines which required fields are missing
+- `src/lib/validation/index.ts` — `validateDraft(draft)` returns `ValidationResult`
+- `ValidationResult` has: `missingFields`, `fieldErrors` (value present but invalid), `isReady`, `status`
+- Garbage detection rejects "test", "asd", "xxx", all-digits, repeated chars, etc.
+- Validates: title length (10–60), price (>0, >100 floor), stock (integer >0), image URLs, condition enum
+- Blocks export/publish until `isReady === true`
+- `getMissingFields(draft)` is a backwards-compat alias for CSV parser
 
-### No Backend
-- Fully frontend-only for MVP
-- All inference runs client-side
+### Mercado Libre Integration
+- All ML API calls happen server-side — client never sees credentials or tokens
+- `src/lib/mercadolibre/auth.ts` — OAuth URL generation, code exchange, token refresh, in-memory store
+- `src/lib/mercadolibre/client.ts` — typed fetch wrapper
+- `src/lib/mercadolibre/publish.ts` — `publishSingleItem` / `publishBulkItems` + dry-run gate
+- `MERCADOLIBRE_DRY_RUN=true` (default) blocks all real API calls — must explicitly set to "false"
+- Token store is in-memory (process lifetime). Replace with DB/KV for production.
+
+### API Routes (server-side only)
+- `GET  /api/ml/status`    → credential + connection state (no secrets exposed)
+- `GET  /api/ml/auth`      → redirects to ML OAuth page
+- `GET  /api/ml/callback`  → exchanges code for tokens, redirects back to app
+- `POST /api/ml/publish`   → validates payload server-side, calls ML API (or dry-runs)
+
+### Has Backend Now
+- Next.js API routes handle all server-side ML work
+- Client components call `/api/ml/*` — never import from `src/lib/mercadolibre/`
 
 ### CSV Bulk Mode
 - CSV column definitions live in `src/lib/csv/template.ts` — single source of truth for headers, examples, and hints
@@ -70,15 +88,28 @@ ENERGY_EFFICIENCY, COOLING_TYPE, POWER_CONSUMPTION, TYPE
 - [x] Core types, category config, inference engine, payload builder built
 - [x] Single-product assisted flow (text → infer → review → JSON export)
 - [x] CSV bulk mode (upload or paste → per-row inference → validation → bulk JSON export)
-- [x] Downloadable CSV template auto-generated from column definitions
-- [x] ModeShell: single-product / bulk toggle on main page
+- [x] Strict validation: garbage detection, field-level errors, publish blocked until isReady
+- [x] MissingFields shows separate sections for invalid values vs missing values + status banner
+- [x] ML integration layer: auth, client, publish, dry-run (server-side only)
+- [x] API routes: /api/ml/status, /api/ml/auth, /api/ml/callback, /api/ml/publish
+- [x] PublishButton with confirmation modal, dry-run indicator, credential warnings
+- [x] Bulk publish: per-row status (idle/publishing/published/dry_run/failed), confirm modal
+- [x] .env.example with all required variables
 
 ## Next Session Instructions
 1. Add Claude/OpenAI integration to replace deterministic inference (`src/lib/inference/index.ts` — swap adapter)
 2. Add image upload with vision-based inference
 3. Add additional categories: mobile phones, mattresses
-4. Consider real ML API integration (requires OAuth credentials)
-5. Add inline field editing in the bulk results table (edit price/condition per row before export)
+4. Persist ML tokens across server restarts (replace in-memory store in `auth.ts` with file/DB/KV)
+5. Add inline field editing in bulk results table (edit price/condition per row before publish)
+6. Add real ML OAuth test with sandbox credentials
+
+## WARNINGS — Read Before Enabling Real Publishing
+- `MERCADOLIBRE_DRY_RUN` defaults to `true` — no real publish without explicit opt-in
+- ML tokens are in-memory only — lost on server restart
+- Category IDs (MLA1577 etc.) are estimates — verify via ML API before production
+- ML description must not contain phone numbers, emails, or WhatsApp — validation blocks common patterns
+- Rate limit: ~50 req/s — bulk publish adds 100ms delay between items
 
 ## Implementation Rules
 - NEVER hardcode attribute logic in UI components

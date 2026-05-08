@@ -2,44 +2,93 @@
 
 MVP de publicación asistida para Mercado Libre, enfocado en electrodomésticos.
 
-## ¿Qué hace?
-
-Reducís el esfuerzo de publicar un producto de **10+ pasos** a **3 pasos**:
-
-1. Escribís el nombre del producto
-2. El sistema infiere marca, categoría, condición, capacidad, color, etc.
-3. Completás solo los campos que faltan y exportás el JSON listo para ML
-
 ## Setup
 
 ```bash
+cp .env.example .env.local   # configurar variables (ver abajo)
 npm install
 npm run dev
 ```
 
 Abrí [http://localhost:3000](http://localhost:3000)
 
-## Ejemplo
+---
 
-Input: `Heladera Samsung no frost 320 litros blanca usada`
+## Variables de entorno
 
-El sistema detecta:
-- Categoría: Heladera (MLA1577)
-- Marca: Samsung
-- Tecnología: No Frost
-- Capacidad: 320 L
-- Color: Blanco
-- Condición: Usado
-- Título sugerido: `Heladera Samsung No Frost 320 L Blanco Usado`
+Copiá `.env.example` a `.env.local` y completá los valores:
 
-Luego te pide solo los campos faltantes (precio, modelo, foto) y genera el JSON listo para la API de ML.
+| Variable | Descripción |
+|---|---|
+| `MERCADOLIBRE_CLIENT_ID` | ID de tu app ML (developers.mercadolibre.com.ar) |
+| `MERCADOLIBRE_CLIENT_SECRET` | Secret de tu app ML |
+| `MERCADOLIBRE_REDIRECT_URI` | `http://localhost:3000/api/ml/callback` |
+| `MERCADOLIBRE_SITE_ID` | `MLA` (Argentina), `MLB` (Brasil), `MLM` (México) |
+| `MERCADOLIBRE_DRY_RUN` | `true` (default) = simula, nunca publica. `false` = publica de verdad. |
 
-## Stack
+---
 
-- Next.js 15 + TypeScript
-- Tailwind CSS
-- Motor de inferencia determinístico (reemplazable por Claude/GPT)
-- Sin backend — todo corre en el cliente
+## Modo dry-run (default)
+
+Por seguridad, `MERCADOLIBRE_DRY_RUN=true` por defecto.
+
+En dry-run:
+- El botón "Publicar" simula el flujo completo sin llamar a la API de ML.
+- El payload se valida y se muestra el resultado simulado.
+- **No se publica nada.**
+
+Para publicar de verdad: configurar credenciales + poner `MERCADOLIBRE_DRY_RUN=false`.
+
+---
+
+## Conectar Mercado Libre (OAuth)
+
+1. Crear app en https://developers.mercadolibre.com.ar/apps/new
+2. Configurar redirect URI: `http://localhost:3000/api/ml/callback`
+3. Copiar Client ID y Secret a `.env.local`
+4. Ir a `http://localhost:3000/api/ml/auth` → ML pide autorización
+5. Después de aprobar, redirige al app con `?ml_connected=true`
+
+**Los tokens se guardan en memoria** — se pierden al reiniciar el servidor. Para producción, reemplazar el store en `src/lib/mercadolibre/auth.ts`.
+
+---
+
+## Flujo de un producto
+
+1. Escribís: `Heladera Samsung no frost 320 litros blanca usada`
+2. El sistema infiere: marca, categoría, condición, capacidad, color, tecnología
+3. Completás solo los campos faltantes (precio, modelo, foto)
+4. Revisás el JSON → Publicás (o dry-run)
+
+---
+
+## Flujo bulk (CSV)
+
+1. Descargás la plantilla CSV desde el tab "Carga masiva"
+2. Completás filas (una por producto)
+3. Subís el CSV o pegás los datos
+4. El sistema procesa cada fila: inferencia + validación
+5. Ves estado por fila: ✓ listo / ⚠ advertencias / ✗ error
+6. "Publicar todos los válidos" → confirmás → publica (o dry-run)
+
+### Columna mínima requerida
+`descripcion_corta` + `precio` — todo lo demás se infiere o es opcional.
+
+---
+
+## Validación
+
+El sistema bloquea export/publish hasta que:
+- título: 10–60 caracteres, sin garbage
+- marca: mínimo 2 caracteres, no placeholder
+- condición: `new`, `used` o `refurbished`
+- precio: número positivo > 100
+- stock: entero positivo
+- imágenes: URLs válidas con https://
+
+Errores se muestran campo por campo en el tab "Validación".
+
+---
 
 ## Arquitectura
 
@@ -47,52 +96,48 @@ Luego te pide solo los campos faltantes (precio, modelo, foto) y genera el JSON 
 src/
   config/categories/     # Schemas de categorías (config-driven)
   lib/
-    inference/           # Motor de inferencia (adaptador intercambiable)
-    payload-builder/     # Construye el payload ML
-    validation/          # Detecta campos faltantes
-  types/                 # Tipos compartidos
+    inference/           # Motor determinístico (adaptador intercambiable)
+    payload-builder/     # Construye payload ML
+    validation/          # validateDraft() — strict rules + field errors
+    csv/                 # Parser + template generator
+    mercadolibre/        # auth, client, publish (SERVER-SIDE ONLY)
+  app/api/ml/            # Next.js API routes — ML calls nunca van al cliente
   components/
-    AssistedPublisher/   # Flujo principal
+    AssistedPublisher/   # Flujo single-product
+    MissingFields/       # Formulario con errores por campo + status banner
+    PublishButton/       # Modal de confirmación + dry-run indicator
+    BulkUpload/          # Carga masiva con publish por fila
     ProductPreview/      # Vista previa editable
-    MissingFields/       # Formulario de campos faltantes
     JsonPreview/         # Preview + export del JSON
-docs/
-  research/              # Investigación sobre estructura ML
-CLAUDE.md                # Contexto del proyecto para Claude Code
+    ModeShell/           # Toggle single / bulk
 ```
+
+---
 
 ## Agregar nueva categoría
 
-1. Agregar en `src/config/categories/appliances.ts`
-2. Agregar keywords en `src/lib/inference/dictionaries.ts`
-3. Listo — todo lo demás es automático
+1. `src/config/categories/appliances.ts` — agregar `CategoryConfig`
+2. `src/lib/inference/dictionaries.ts` — agregar keywords y type
+3. Listo — payload builder, validación y UI lo toman automáticamente
 
-## TODO: Integración con IA
-
-El adaptador de inferencia está en `src/lib/inference/index.ts`.
-Para reemplazar el motor determinístico:
+## Reemplazar inferencia por IA
 
 ```typescript
+// src/lib/inference/index.ts
 export class ClaudeInferenceAdapter implements InferenceAdapter {
   async infer(input: string): Promise<InferenceResult> {
-    // Llamar a Claude API con el input
-    // Parsear respuesta al formato InferenceResult
+    // llamar Claude API, parsear a InferenceResult
   }
 }
 export const inferenceAdapter = new ClaudeInferenceAdapter();
 ```
 
-## TODO: Integración con ML API
+---
 
-Ver `docs/research/ml-listing-structure.md` para la estructura del payload.
-Requiere OAuth con ML Developer credentials.
-
-## Categorías soportadas (MVP)
+## Categorías soportadas
 
 **Grandes:** Heladera, Lavarropas, Secadora, Lavavajillas, Horno, Cocina, Freezer
 
 **Pequeños:** Microondas, Freidora de Aire, Licuadora, Cafetera, Pava Eléctrica, Aspiradora, Plancha, Tostadora
 
-## Categorías futuras (roadmap)
-
-Celulares, Colchones, Sommiers, Sábanas, Almohadas, Bicicletas, Cochecitos, Skateboards, Monopatines eléctricos
+**Roadmap:** Celulares, Colchones, Sommiers, Sábanas, Almohadas, Bicicletas, Cochecitos, Skateboards, Monopatines eléctricos

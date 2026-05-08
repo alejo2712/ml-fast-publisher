@@ -1,21 +1,29 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import type { InferenceResult, MLPayload, MissingField, ProductDraft } from '@/types';
+import type { InferenceResult, MLPayload, ProductDraft } from '@/types';
+import type { ValidationResult } from '@/lib/validation';
 import { inferProduct } from '@/lib/inference';
 import { buildMLPayload, buildProductDraft } from '@/lib/payload-builder';
-import { getMissingFields } from '@/lib/validation';
+import { validateDraft } from '@/lib/validation';
 import { InputStep } from './InputStep';
 import { ReviewStep } from './ReviewStep';
 
 type Step = 'input' | 'inferring' | 'review';
+
+const FIELD_MAP: Record<string, keyof ProductDraft> = {
+  title: 'title', brand: 'brand', model: 'model', condition: 'condition',
+  price: 'price', stock: 'stock', color: 'color', voltage: 'voltage',
+  capacity: 'capacity', power_consumption: 'watts', cooling_type: 'technology',
+  type: 'technology', description: 'description', sku: 'sku',
+};
 
 export function AssistedPublisher() {
   const [step, setStep] = useState<Step>('input');
   const [inference, setInference] = useState<InferenceResult | null>(null);
   const [draft, setDraft] = useState<ProductDraft | null>(null);
   const [payload, setPayload] = useState<MLPayload | null>(null);
-  const [missingFields, setMissingFields] = useState<MissingField[]>([]);
+  const [validation, setValidation] = useState<ValidationResult | null>(null);
 
   const handleInput = useCallback(async (input: string) => {
     setStep('inferring');
@@ -23,12 +31,12 @@ export function AssistedPublisher() {
       const result = await inferProduct(input);
       const newDraft = buildProductDraft(result);
       const newPayload = buildMLPayload(newDraft);
-      const missing = getMissingFields(newDraft);
+      const newValidation = validateDraft(newDraft);
 
       setInference(result);
       setDraft(newDraft);
       setPayload(newPayload);
-      setMissingFields(missing);
+      setValidation(newValidation);
       setStep('review');
     } catch {
       setStep('input');
@@ -36,65 +44,44 @@ export function AssistedPublisher() {
   }, []);
 
   const handleFieldChange = useCallback((id: string, value: string | number) => {
-    if (!draft || !inference) return;
+    if (!draft) return;
 
-    const fieldMap: Record<string, keyof ProductDraft> = {
-      title: 'title',
-      brand: 'brand',
-      model: 'model',
-      condition: 'condition',
-      price: 'price',
-      stock: 'stock',
-      color: 'color',
-      voltage: 'voltage',
-      capacity: 'capacity',
-      power_consumption: 'watts',
-      cooling_type: 'technology',
-      type: 'technology',
-      description: 'description',
-      sku: 'sku',
-    };
-
-    const key = fieldMap[id.toLowerCase()];
-    const updatedDraft = key
-      ? { ...draft, [key]: value }
-      : { ...draft };
+    const key = FIELD_MAP[id.toLowerCase()];
+    let updatedDraft: ProductDraft = key ? { ...draft, [key]: value } : { ...draft };
 
     if (id === 'images') {
-      const urlStr = String(value);
-      updatedDraft.images = urlStr.split(',').map((u) => u.trim()).filter(Boolean);
+      updatedDraft.images = String(value).split(',').map((u) => u.trim()).filter(Boolean);
     }
 
     const newPayload = buildMLPayload(updatedDraft);
-    const newMissing = getMissingFields(updatedDraft);
+    const newValidation = validateDraft(updatedDraft);
 
     setDraft(updatedDraft);
     setPayload(newPayload);
-    setMissingFields(newMissing);
-  }, [draft, inference]);
+    setValidation(newValidation);
+  }, [draft]);
 
   const handleBack = useCallback(() => {
     setStep('input');
     setInference(null);
     setDraft(null);
     setPayload(null);
-    setMissingFields([]);
+    setValidation(null);
   }, []);
 
   if (step === 'input' || step === 'inferring') {
     return <InputStep onSubmit={handleInput} isLoading={step === 'inferring'} />;
   }
 
-  if (step === 'review' && inference && draft && payload) {
+  if (step === 'review' && inference && draft && payload && validation) {
     return (
       <ReviewStep
         inference={inference}
         draft={draft}
         payload={payload}
-        missingFields={missingFields}
+        validation={validation}
         onBack={handleBack}
         onFieldChange={handleFieldChange}
-        onDraftFieldChange={handleFieldChange}
       />
     );
   }
