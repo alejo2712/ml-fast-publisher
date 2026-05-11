@@ -297,23 +297,12 @@ export function ImageUploader({ images, onChange, disabled }: ImageUploaderProps
         </div>
       )}
 
-      {/* Count + validation hint */}
-      <div className="flex items-center justify-between">
-        <p className={cn('text-xs', images.length === 0 ? 'text-red-500' : 'text-gray-400')}>
-          {images.length === 0
-            ? 'Al menos 1 foto requerida para publicar'
-            : `${images.length} foto${images.length !== 1 ? 's' : ''} · La primera es la imagen principal`}
-        </p>
-        {images.length > 0 && (
-          <p className="text-xs text-gray-400">
-            {images.filter((u) => u.startsWith('/uploads/')).length > 0 && (
-              <span className="text-amber-500">
-                Imágenes locales — no aptas para publicación real en ML
-              </span>
-            )}
-          </p>
-        )}
-      </div>
+      {/* Count hint */}
+      <p className={cn('text-xs', images.length === 0 ? 'text-red-500' : 'text-gray-400')}>
+        {images.length === 0
+          ? 'Al menos 1 foto requerida para publicar'
+          : `${images.length} foto${images.length !== 1 ? 's' : ''} · La primera es la imagen principal`}
+      </p>
     </div>
   );
 }

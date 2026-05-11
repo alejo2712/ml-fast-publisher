@@ -2,7 +2,8 @@
 
 import type { InferenceResult, MLPayload, ProductDraft } from '@/types';
 import type { ValidationResult } from '@/lib/validation';
-import { ArrowLeft, RefreshCw, BookTemplate, ImageIcon } from 'lucide-react';
+import { ArrowLeft, RefreshCw, BookTemplate, ImageIcon, AlertTriangle } from 'lucide-react';
+import { isLocalImagePath } from '@/lib/images/prepare-images';
 import { useState } from 'react';
 import { cn } from '@/components/ui';
 import { ProductPreview } from '@/components/ProductPreview';
@@ -39,6 +40,7 @@ export function ReviewStep({
   const [activeTab, setActiveTab] = useState<Tab>('preview');
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
 
+  const hasLocalImages = draft.images.some(isLocalImagePath);
   const problemCount = validation.missingFields.length + validation.fieldErrors.length;
 
   const tabs: { id: Tab; label: string; badge?: string; badgeColor?: string }[] = [
@@ -88,7 +90,7 @@ export function ReviewStep({
             <BookTemplate size={13} />
             Guardar plantilla
           </button>
-          <PublishButton payload={payload} isReady={validation.isReady} />
+          <PublishButton payload={payload} isReady={validation.isReady} hasLocalImages={hasLocalImages} />
         </div>
       </div>
 
@@ -128,7 +130,7 @@ export function ReviewStep({
 
       {/* Images — always visible, not tab-gated */}
       <div className="bg-white rounded-xl border border-gray-100 p-5 space-y-3">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <ImageIcon size={15} className="text-gray-400" />
           <span className="text-sm font-semibold text-gray-700">Fotos del producto</span>
           {validation.missingFields.some((f) => f.id === 'images') && (
@@ -142,6 +144,22 @@ export function ReviewStep({
             </span>
           )}
         </div>
+
+        {/* Local images warning — shown whenever local paths are present */}
+        {hasLocalImages && (
+          <div className="flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 text-xs">
+            <AlertTriangle size={13} className="text-amber-500 mt-0.5 shrink-0" />
+            <div className="space-y-0.5">
+              <p className="font-semibold text-amber-700">Imágenes locales detectadas</p>
+              <p className="text-amber-600">
+                Las fotos subidas desde tu equipo (<code className="bg-amber-100 px-0.5 rounded">/uploads/...</code>) solo funcionan en{' '}
+                <strong>dry-run</strong>. Para publicar en Mercado Libre de verdad, usá URLs HTTPS públicas
+                o configurá <code className="bg-amber-100 px-0.5 rounded">IMAGE_PUBLIC_BASE_URL</code> en tu entorno.
+              </p>
+            </div>
+          </div>
+        )}
+
         <ImageUploader images={draft.images} onChange={onImagesChange} />
       </div>
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Send, AlertTriangle, CheckCircle2, Loader2, ShieldAlert, FlaskConical, X } from 'lucide-react';
+import { Send, AlertTriangle, CheckCircle2, Loader2, ShieldAlert, FlaskConical, X, ImageIcon } from 'lucide-react';
 import { cn } from '@/components/ui';
 import type { MLPayload } from '@/types';
 import type { MLBulkPublishResult } from '@/lib/mercadolibre/types';
@@ -17,6 +17,8 @@ interface MLStatus {
 interface PublishButtonProps {
   payload: MLPayload;
   isReady: boolean;
+  /** True when any image in the payload is a local /uploads/ path */
+  hasLocalImages?: boolean;
   rowIndex?: number;
   onResult?: (result: MLBulkPublishResult) => void;
 }
@@ -24,16 +26,20 @@ interface PublishButtonProps {
 function ConfirmModal({
   payload,
   mlStatus,
+  hasLocalImages,
   onConfirm,
   onCancel,
   isPublishing,
 }: {
   payload: MLPayload;
   mlStatus: MLStatus;
+  hasLocalImages: boolean;
   onConfirm: () => void;
   onCancel: () => void;
   isPublishing: boolean;
 }) {
+  const blockedByImages = !mlStatus.dryRun && hasLocalImages;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md space-y-5 p-6">
@@ -47,6 +53,7 @@ function ConfirmModal({
           </button>
         </div>
 
+        {/* Dry-run notice */}
         {mlStatus.dryRun && (
           <div className="flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-xl p-3 text-sm">
             <FlaskConical size={16} className="text-blue-500 mt-0.5 shrink-0" />
@@ -60,6 +67,29 @@ function ConfirmModal({
           </div>
         )}
 
+        {/* Local images warning — dry-run: informational; real: blocking */}
+        {hasLocalImages && (
+          <div className={cn(
+            'flex items-start gap-3 rounded-xl p-3 text-sm',
+            mlStatus.dryRun
+              ? 'bg-amber-50 border border-amber-200'
+              : 'bg-red-50 border border-red-200'
+          )}>
+            <ImageIcon size={16} className={cn('mt-0.5 shrink-0', mlStatus.dryRun ? 'text-amber-500' : 'text-red-500')} />
+            <div>
+              <p className={cn('font-semibold', mlStatus.dryRun ? 'text-amber-700' : 'text-red-700')}>
+                {mlStatus.dryRun ? 'Imágenes locales (solo dry-run)' : 'Imágenes locales — publicación bloqueada'}
+              </p>
+              <p className={cn('text-xs mt-0.5', mlStatus.dryRun ? 'text-amber-600' : 'text-red-600')}>
+                {mlStatus.dryRun
+                  ? 'Las imágenes locales (/uploads/...) funcionan en dry-run pero Mercado Libre no puede accederlas en publicación real. Agregá imágenes desde URLs HTTPS públicas o configurá IMAGE_PUBLIC_BASE_URL.'
+                  : 'Las imágenes locales no son accesibles desde internet. Mercado Libre requiere URLs HTTPS públicas. Reemplazá las imágenes o configurá IMAGE_PUBLIC_BASE_URL antes de publicar.'}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Missing credentials */}
         {!mlStatus.credentialsConfigured && (
           <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm">
             <ShieldAlert size={16} className="text-amber-500 mt-0.5 shrink-0" />
@@ -72,6 +102,7 @@ function ConfirmModal({
           </div>
         )}
 
+        {/* Not connected */}
         {mlStatus.credentialsConfigured && !mlStatus.connected && !mlStatus.dryRun && (
           <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl p-3 text-sm">
             <ShieldAlert size={16} className="text-red-500 mt-0.5 shrink-0" />
@@ -84,6 +115,7 @@ function ConfirmModal({
           </div>
         )}
 
+        {/* Product summary */}
         <div className="bg-gray-50 rounded-xl p-4 space-y-2 text-sm">
           <p className="font-semibold text-gray-800 truncate">{payload.title}</p>
           <div className="flex flex-wrap gap-4 text-gray-500 text-xs">
@@ -92,6 +124,12 @@ function ConfirmModal({
             <span>Condición: <span className="font-medium text-gray-700">{payload.condition}</span></span>
           </div>
           <p className="text-xs text-gray-400">Cat: {payload.category_id} · Tipo: {payload.listing_type_id}</p>
+          <p className="text-xs text-gray-400">
+            {payload.pictures.length} imagen{payload.pictures.length !== 1 ? 'es' : ''}
+            {hasLocalImages && (
+              <span className="ml-1 text-amber-500">· contiene imágenes locales</span>
+            )}
+          </p>
         </div>
 
         <div className="flex gap-3">
@@ -104,10 +142,12 @@ function ConfirmModal({
           </button>
           <button
             onClick={onConfirm}
-            disabled={isPublishing}
+            disabled={isPublishing || blockedByImages}
             className={cn(
               'flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all',
-              mlStatus.dryRun ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-indigo-600 hover:bg-indigo-700 text-white',
+              mlStatus.dryRun
+                ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                : 'bg-indigo-600 hover:bg-indigo-700 text-white',
               'disabled:opacity-50 disabled:cursor-not-allowed'
             )}
           >
@@ -125,7 +165,7 @@ function ConfirmModal({
   );
 }
 
-export function PublishButton({ payload, isReady, rowIndex, onResult }: PublishButtonProps) {
+export function PublishButton({ payload, isReady, hasLocalImages = false, rowIndex, onResult }: PublishButtonProps) {
   const [mlStatus, setMlStatus] = useState<MLStatus | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
@@ -146,9 +186,20 @@ export function PublishButton({ payload, isReady, rowIndex, onResult }: PublishB
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ items: [{ payload, rowIndex }] }),
       });
-      const data: MLBulkPublishResult = await res.json();
-      setResult(data);
-      onResult?.(data);
+      const data = await res.json();
+
+      // Surface image errors returned by the server as a publish failure
+      if (!res.ok && data.imageErrors) {
+        const msg = data.imageErrors[0]?.errors?.[0] ?? data.error ?? 'Error de imágenes';
+        setResult({
+          results: [{ status: 'failed', message: msg, rowIndex }],
+          totalPublished: 0, totalFailed: 1, totalSkipped: 0, dryRun: false,
+        });
+        return;
+      }
+
+      setResult(data as MLBulkPublishResult);
+      onResult?.(data as MLBulkPublishResult);
     } catch (err) {
       setResult({
         results: [{ status: 'failed', message: err instanceof Error ? err.message : 'Error de red', rowIndex }],
@@ -189,30 +240,47 @@ export function PublishButton({ payload, isReady, rowIndex, onResult }: PublishB
     );
   }
 
-  const isDryRun = mlStatus?.dryRun ?? true;
+  const inDryRun = mlStatus?.dryRun ?? true;
+  // Block the button when not dry-run and local images present
+  const blockedByImages = !inDryRun && hasLocalImages;
+  const isDisabled = !isReady || blockedByImages;
+
+  const title = !isReady
+    ? 'Completá todos los campos requeridos antes de publicar'
+    : blockedByImages
+    ? 'Las imágenes locales no son válidas para publicación real. Usá URLs HTTPS o configurá IMAGE_PUBLIC_BASE_URL.'
+    : undefined;
 
   return (
     <>
       <button
         onClick={() => setShowModal(true)}
-        disabled={!isReady}
-        title={!isReady ? 'Completá todos los campos requeridos antes de publicar' : undefined}
+        disabled={isDisabled}
+        title={title}
         className={cn(
           'flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm transition-all',
-          isDryRun
+          blockedByImages
+            ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-sm'
+            : inDryRun
             ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm hover:shadow-md'
             : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm hover:shadow-md',
           'disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none'
         )}
       >
-        {isDryRun ? <FlaskConical size={15} /> : <Send size={15} />}
-        {isDryRun ? 'Publicar (dry-run)' : 'Publicar en Mercado Libre'}
+        {blockedByImages ? (
+          <><ImageIcon size={15} /> Imágenes locales</>
+        ) : inDryRun ? (
+          <><FlaskConical size={15} /> Publicar (dry-run)</>
+        ) : (
+          <><Send size={15} /> Publicar en Mercado Libre</>
+        )}
       </button>
 
       {showModal && mlStatus && (
         <ConfirmModal
           payload={payload}
           mlStatus={mlStatus}
+          hasLocalImages={hasLocalImages}
           onConfirm={handleConfirm}
           onCancel={() => setShowModal(false)}
           isPublishing={isPublishing}

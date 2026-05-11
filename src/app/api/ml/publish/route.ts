@@ -6,6 +6,7 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { getCredentials, refreshAccessToken } from '@/lib/mercadolibre/auth';
 import { publishBulkItems, isDryRun } from '@/lib/mercadolibre/publish';
+import { prepareImages } from '@/lib/images/prepare-images';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
 import type { MLPayload } from '@/types';
@@ -24,9 +25,11 @@ export async function POST(request: NextRequest) {
   if (!body || !Array.isArray(body.items) || body.items.length === 0) {
     return NextResponse.json({ error: 'Invalid body. Expected { items: [...] }' }, { status: 400 });
   }
+
+  const dryRun = isDryRun();
   const items: PublishRequestItem[] = body.items;
 
-  // Server-side payload validation
+  // ── Server-side payload validation ────────────────────────────────────────
   const validationErrors: { rowIndex?: number; errors: string[] }[] = [];
   for (const item of items) {
     const errors: string[] = [];
@@ -40,13 +43,46 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Validation failed', validationErrors }, { status: 422 });
   }
 
+  // ── Image preparation ─────────────────────────────────────────────────────
+  // Run per item; collect all image errors before proceeding.
+  const imageIssues: { rowIndex?: number; errors: string[]; warnings: string[] }[] = [];
+
+  for (const item of items) {
+    const rawPaths = (item.payload.pictures ?? []).map((p) => p.source);
+    const imgResult = prepareImages(rawPaths, dryRun);
+
+    if (imgResult.errors.length > 0) {
+      imageIssues.push({ rowIndex: item.rowIndex, errors: imgResult.errors, warnings: imgResult.warnings });
+    }
+
+    if (!imgResult.blockRealPublish) {
+      // Replace pictures with prepared (possibly converted) sources
+      item.payload = {
+        ...item.payload,
+        pictures: imgResult.prepared.map((p) => ({ source: p.source })),
+      };
+    }
+  }
+
+  if (imageIssues.length > 0) {
+    return NextResponse.json(
+      {
+        error: 'Imágenes no publicables para publicación real en Mercado Libre.',
+        imageErrors: imageIssues,
+        hint: 'Usá URLs HTTPS externas o configurá IMAGE_PUBLIC_BASE_URL con la dirección pública del servidor.',
+      },
+      { status: 422 }
+    );
+  }
+
+  // ── Credentials & token refresh ───────────────────────────────────────────
   const credentials = getCredentials();
-  if (!credentials && !isDryRun()) {
+  if (!credentials && !dryRun) {
     return NextResponse.json({ error: 'ML credentials not configured.' }, { status: 503 });
   }
 
   let accessToken = 'dry-run-token';
-  if (!isDryRun()) {
+  if (!dryRun) {
     if (!userId) {
       return NextResponse.json({ error: 'Not connected to Mercado Libre.' }, { status: 401 });
     }
@@ -63,8 +99,6 @@ export async function POST(request: NextRequest) {
       userId: dbAccount.mlUserId,
     };
 
-    // Refresh if expiring within 5 minutes
-    const credentials = getCredentials();
     if (credentials && tokens.expiresAt - Date.now() < 5 * 60 * 1000) {
       try {
         tokens = await refreshAccessToken(tokens, credentials);
@@ -84,9 +118,9 @@ export async function POST(request: NextRequest) {
     accessToken = tokens.accessToken;
   }
 
+  // ── Publish ───────────────────────────────────────────────────────────────
   const result = await publishBulkItems(items, accessToken);
 
-  // Persist results to history if user is authenticated
   if (userId) {
     await Promise.allSettled(
       result.results.map((r, i) => {
@@ -98,7 +132,7 @@ export async function POST(request: NextRequest) {
             mlItemId: r.itemId ?? null,
             permalink: r.permalink ?? null,
             status: r.status === 'published' ? 'PUBLISHED' : r.status === 'dry_run' ? 'DRY_RUN' : 'FAILED',
-            dryRun: isDryRun(),
+            dryRun,
             payload: item.payload as object,
             errorMessage: r.status === 'failed' ? r.message : null,
           },

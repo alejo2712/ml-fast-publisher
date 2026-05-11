@@ -187,10 +187,53 @@
 
 ---
 
+---
+
+## 14. Image preparation — dry-run vs real publish
+
+### Setup A: `MERCADOLIBRE_DRY_RUN=true`, `IMAGE_PUBLIC_BASE_URL=` (empty)
+
+| # | Steps | Expected |
+|---|-------|----------|
+| 14.1 | Upload local image → publish (dry-run) | Succeeds, amber warning banner visible in images section |
+| 14.2 | Publish button shows "Publicar (dry-run)" label | Not blocked — dry-run allows local images |
+| 14.3 | Open confirm modal | Blue dry-run notice + amber "Imágenes locales (solo dry-run)" info both visible |
+| 14.4 | Add external https://... URL → publish (dry-run) | Succeeds cleanly, no local image warning |
+
+### Setup B: `MERCADOLIBRE_DRY_RUN=false`, `IMAGE_PUBLIC_BASE_URL=` (empty)
+
+| # | Steps | Expected |
+|---|-------|----------|
+| 14.5 | Upload local image → review step | Amber banner "Imágenes locales detectadas" shown |
+| 14.6 | Publish button label changes to "Imágenes locales" (amber) | Button is disabled |
+| 14.7 | Click disabled button (via title tooltip) | "Las imágenes locales no son válidas..." message shown |
+| 14.8 | Open modal (by removing disabled, or via API) | Red "Imágenes locales — publicación bloqueada" block visible; confirm button disabled |
+| 14.9 | `POST /api/ml/publish` with local image path directly | Returns 422 with `imageErrors` array |
+| 14.10 | Add external https://... URL only → publish | Succeeds (no local images) |
+
+### Setup C: `MERCADOLIBRE_DRY_RUN=false`, `IMAGE_PUBLIC_BASE_URL=https://myapp.example.com`
+
+| # | Steps | Expected |
+|---|-------|----------|
+| 14.11 | Upload local image → review step | No amber banner (path will be converted) |
+| 14.12 | Publish button shows "Publicar en Mercado Libre" (indigo) | Not blocked |
+| 14.13 | `POST /api/ml/publish` — check payload recorded in history | `pictures[0].source` = `https://myapp.example.com/uploads/...` |
+
+### Setup D: `IMAGE_PUBLIC_BASE_URL=http://localhost:3000` (http, not https)
+
+| # | Steps | Expected |
+|---|-------|----------|
+| 14.14 | Upload local image → `MERCADOLIBRE_DRY_RUN=false` → attempt publish | Returns 422 — http:// base not publishable |
+| 14.15 | Amber warning still shown | Still treated as local-only |
+
+---
+
 ## Known limitations (not bugs)
 
 - ML OAuth tokens are also cached in-memory — cleared on server restart, but DB fallback restores them on next request to `/api/ml/status` or publish.
 - ML category IDs (`MLA1577`, etc.) are estimates — must be verified via ML API before going live.
 - Token refresh is triggered by publish requests — no background refresh job.
 - ML description must not contain phone numbers or emails (enforced client and server side).
-- Local uploaded images (`/uploads/...`) cannot be used for real ML publishing — ML API requires publicly accessible HTTPS URLs. Dry-run mode works fine. For production, add CDN upload step before publish.
+- Local uploaded images (`/uploads/...`) require `IMAGE_PUBLIC_BASE_URL=https://your-domain.com` to be usable in real ML publishing. In dry-run mode they always work.
+- `IMAGE_PUBLIC_BASE_URL` must start with `https://` — http:// is rejected as non-publishable.
+- The image preparation layer runs server-side only — `prepare-images.ts` must never be imported in client components.

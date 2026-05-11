@@ -135,9 +135,18 @@ All routes in `src/app/api/` — server-side only, no ML credentials in client.
 - Component: `src/components/ImageUploader/index.tsx` — drag-drop, click, URL input, thumbnails, remove, set-main
 - `ProductDraft.images: string[]` accepts both `https://` URLs and `/uploads/...` local paths
 - Validation accepts both — `isValidImageRef()` in `src/lib/validation/index.ts`
-- In payload builder: local images included as-is (fine for dry-run; ML real publishing needs CDN)
 - `public/uploads/` is gitignored — not committed to repo
-- **Limitation**: local `/uploads/` paths won't work for real ML publishing (server must be publicly accessible)
+
+### Image Preparation Layer
+- `src/lib/images/types.ts` — `PreparedImage`, `ImagePreparationResult` types
+- `src/lib/images/prepare-images.ts` — `prepareImages(paths, dryRun)` — server-only, reads env
+- Classification: `external` (https://) → publishable; `local` (/uploads/) → not publishable unless resolved; `public` (local → converted via IMAGE_PUBLIC_BASE_URL) → publishable
+- `isLocalImagePath(src)` — client-safe helper exported from prepare-images.ts
+- **`/api/ml/publish`**: calls `prepareImages` before forwarding to ML; returns 422 with `imageErrors` if real publish would fail
+- **`PublishButton`**: receives `hasLocalImages` prop; in real mode shows amber button + blocks confirm; in dry-run shows informational warning in modal
+- **`ReviewStep`**: computes `hasLocalImages`, passes to `PublishButton`, shows amber warning banner in images section
+- **`IMAGE_PUBLIC_BASE_URL`** env var (optional): if set with an `https://` base, local paths are rewritten to public URLs — enabling real publish without a CDN migration
+- Dry-run always allowed with any image type; real publish blocked unless all images are publishable HTTPS URLs
 
 ### Clone / Duplicate
 - Drafts: `POST /api/drafts/[id]/duplicate` → creates `(copia)` clone, returns new draft
@@ -249,6 +258,12 @@ npm run dev
 - [x] Validation accepts /uploads/ local paths + https:// URLs
 - [x] Payload builder documents local image limitation (needs CDN for real ML publishing)
 - [x] Build passing (26 routes, 0 TypeScript errors)
+- [x] Image preparation layer: src/lib/images/ — classifies external/local/public images
+- [x] /api/ml/publish uses prepareImages — blocks real publish for local-only images (422 + imageErrors)
+- [x] IMAGE_PUBLIC_BASE_URL: converts local /uploads/ to public HTTPS URL for real publishing
+- [x] PublishButton: amber warning + modal block when local images + real mode; informational in dry-run
+- [x] ReviewStep: local image warning banner always visible when /uploads/ paths present
+- [x] Build passing (26 routes, 0 TypeScript errors)
 
 ## Next Session Instructions
 1. Add real ML OAuth test with sandbox credentials — verify callback → DB persist → publish flow end-to-end
@@ -265,7 +280,7 @@ npm run dev
 - ML description must not contain phone numbers, emails, or WhatsApp — validation blocks common patterns
 - Rate limit: ~50 req/s — bulk publish adds 100ms delay between items
 - Prisma 7: no `url` in schema.prisma — connection URL lives in `prisma.config.ts` and `db.ts` adapter
-- Local uploaded images (`/uploads/...`) cannot be published to ML in real mode — ML API requires publicly accessible HTTPS URLs. Must upload to CDN or use ML's own image upload API first.
+- Local uploaded images (`/uploads/...`) cannot be published to ML in real mode — ML API requires publicly accessible HTTPS URLs. Set `IMAGE_PUBLIC_BASE_URL=https://your-domain.com` to auto-convert local paths, or use external HTTPS image URLs.
 
 ## Implementation Rules
 - NEVER hardcode attribute logic in UI components
