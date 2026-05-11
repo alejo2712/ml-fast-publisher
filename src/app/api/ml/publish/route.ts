@@ -4,7 +4,7 @@
  * Secrets never leave the server.
  */
 import { type NextRequest, NextResponse } from 'next/server';
-import { getCredentials, getValidTokens } from '@/lib/mercadolibre/auth';
+import { getCredentials, refreshAccessToken } from '@/lib/mercadolibre/auth';
 import { publishBulkItems, isDryRun } from '@/lib/mercadolibre/publish';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
@@ -47,14 +47,40 @@ export async function POST(request: NextRequest) {
 
   let accessToken = 'dry-run-token';
   if (!isDryRun()) {
-    const tokens = userId
-      ? await prisma.mercadoLibreAccount.findFirst({ where: { userId } }).then((a) =>
-          a ? { accessToken: a.accessToken, refreshToken: a.refreshToken, expiresAt: a.expiresAt.getTime(), userId: a.mlUserId } : null
-        )
-      : null;
-    if (!tokens) {
+    if (!userId) {
       return NextResponse.json({ error: 'Not connected to Mercado Libre.' }, { status: 401 });
     }
+
+    const dbAccount = await prisma.mercadoLibreAccount.findFirst({ where: { userId } });
+    if (!dbAccount) {
+      return NextResponse.json({ error: 'Not connected to Mercado Libre.' }, { status: 401 });
+    }
+
+    let tokens = {
+      accessToken: dbAccount.accessToken,
+      refreshToken: dbAccount.refreshToken,
+      expiresAt: dbAccount.expiresAt.getTime(),
+      userId: dbAccount.mlUserId,
+    };
+
+    // Refresh if expiring within 5 minutes
+    const credentials = getCredentials();
+    if (credentials && tokens.expiresAt - Date.now() < 5 * 60 * 1000) {
+      try {
+        tokens = await refreshAccessToken(tokens, credentials);
+        await prisma.mercadoLibreAccount.update({
+          where: { userId_siteId: { userId, siteId: credentials.siteId } },
+          data: {
+            accessToken: tokens.accessToken,
+            refreshToken: tokens.refreshToken,
+            expiresAt: new Date(tokens.expiresAt),
+          },
+        });
+      } catch {
+        return NextResponse.json({ error: 'Token refresh failed. Reconnect Mercado Libre.' }, { status: 401 });
+      }
+    }
+
     accessToken = tokens.accessToken;
   }
 

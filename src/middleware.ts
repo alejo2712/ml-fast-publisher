@@ -2,7 +2,7 @@ import { auth } from '@/auth';
 import { NextResponse } from 'next/server';
 
 // Protected path prefixes
-const PROTECTED = ['/dashboard', '/drafts', '/templates', '/history'];
+const PROTECTED = ['/dashboard', '/drafts', '/templates', '/history', '/settings'];
 
 export default auth((req) => {
   const { pathname } = req.nextUrl;

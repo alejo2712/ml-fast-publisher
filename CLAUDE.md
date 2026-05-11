@@ -217,16 +217,22 @@ npm run dev
 - [x] Autosave: dirty/saving/saved/error states + save timestamp display
 - [x] Preferences applied to new drafts (currency, condition, listing type, shipping, warranty)
 - [x] Build passing (25 routes, 0 TypeScript errors)
+- [x] Full code audit completed (Session 4 — Stabilization)
+- [x] Bug fix: /settings added to middleware PROTECTED list
+- [x] Bug fix: ML OAuth callback now persists tokens to DB (MercadoLibreAccount upsert)
+- [x] Bug fix: /api/ml/status checks DB when in-memory store is empty (survives restarts)
+- [x] Bug fix: /api/ml/publish refreshes expired tokens before publishing, updates DB
+- [x] Bug fix: /api/history POST validates status field against PublishStatus enum
+- [x] Manual test plan: docs/testing/manual-test-plan.md (11 test groups, 50+ scenarios)
 
 ## Next Session Instructions
-1. Add Claude/OpenAI integration to replace deterministic inference (`src/lib/inference/index.ts` — swap adapter)
-2. Add image upload with vision-based inference
-3. Add additional categories: mobile phones, mattresses
-4. Apply template data when user clicks "Usar plantilla" (navigate to / with template pre-applied)
-5. Persist bulk CSV results to `BulkUpload` DB table for history/audit
-6. Add real ML OAuth test with sandbox credentials
-7. Run `npx prisma migrate dev --name init` against a real DB and verify migrations
-8. Keyboard shortcuts: Tab through bulk edit fields, Enter to save, Shift+Enter to next row
+1. Apply template data when user clicks "Usar plantilla" (navigate to / with template pre-applied via URL params or sessionStorage)
+2. Add real ML OAuth test with sandbox credentials — verify callback → DB persist → publish flow end-to-end
+3. Add additional categories: mobile phones, mattresses (follow pattern in `src/config/categories/appliances.ts`)
+4. Persist bulk CSV results to `BulkUpload` DB table for history/audit
+5. Add Claude/OpenAI integration to replace deterministic inference (`src/lib/inference/index.ts` — swap adapter)
+6. Keyboard shortcuts: Tab through bulk edit fields, Enter to save, Shift+Enter to next row
+7. Run `npx prisma migrate dev` against a real DB and verify all migrations apply cleanly
 
 ## WARNINGS — Read Before Enabling Real Publishing
 - `MERCADOLIBRE_DRY_RUN` defaults to `true` — no real publish without explicit opt-in

@@ -31,17 +31,24 @@ export async function GET(req: NextRequest) {
   }
 }
 
+const VALID_PUBLISH_STATUS = ['PUBLISHED', 'DRY_RUN', 'FAILED', 'PENDING', 'SKIPPED'] as const;
+type PublishStatusValue = typeof VALID_PUBLISH_STATUS[number];
+
 export async function POST(req: NextRequest) {
   try {
     const { userId } = await requireAuth();
     const body = await req.json();
+    const rawStatus = body.status ?? 'PENDING';
+    if (!VALID_PUBLISH_STATUS.includes(rawStatus as PublishStatusValue)) {
+      return NextResponse.json({ error: `Invalid status: ${rawStatus}` }, { status: 400 });
+    }
     const record = await prisma.publishHistory.create({
       data: {
         userId,
         draftId: body.draftId,
         mlItemId: body.mlItemId,
         permalink: body.permalink,
-        status: body.status ?? 'PENDING',
+        status: rawStatus as PublishStatusValue,
         dryRun: body.dryRun ?? true,
         payload: body.payload,
         errorMessage: body.errorMessage,
