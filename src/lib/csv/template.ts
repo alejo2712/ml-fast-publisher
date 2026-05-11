@@ -37,13 +37,16 @@ export const CSV_HEADERS = CSV_COLUMNS.map((c) => c.header);
 
 export function generateCsvTemplate(): string {
   const headerRow = CSV_HEADERS.join(',');
-  const hintRow = CSV_COLUMNS.map((c) => `"${c.hint.replace(/"/g, '""')}"`).join(',');
-  const exampleRow = CSV_COLUMNS.map((c) => `"${c.example.replace(/"/g, '""')}"`).join(',');
+  // Prefix hint/example rows with '#' so the parser skips them when re-uploaded
+  const hintRow = '# ' + CSV_COLUMNS.map((c) => `"${c.hint.replace(/"/g, '""')}"`).join(',');
+  const exampleRow = '# ejemplo: ' + CSV_COLUMNS.map((c) => `"${c.example.replace(/"/g, '""')}"`).join(',');
   return [headerRow, hintRow, exampleRow].join('\n');
 }
 
 export function downloadCsvTemplate() {
-  const content = generateCsvTemplate();
+  // UTF-8 BOM (﻿) ensures Excel opens the file with correct encoding on Windows
+  const BOM = '﻿';
+  const content = BOM + generateCsvTemplate();
   const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -57,45 +60,44 @@ export async function downloadExcelTemplate() {
   // Dynamic import to avoid including xlsx in server bundle
   const XLSX = await import('xlsx');
 
-  // Row 1: headers
-  const headers = CSV_COLUMNS.map((c) => c.header);
-  // Row 2: hints
-  const hints = CSV_COLUMNS.map((c) => c.hint);
-  // Row 3: example values
-  const examples = CSV_COLUMNS.map((c) => c.example);
+  // Productos sheet: only header row (no hint/example rows — those go to Instructions sheet).
+  // This ensures re-uploading the template doesn't produce false data rows.
+  const headers = CSV_COLUMNS.map((c) =>
+    c.required ? `${c.header} (REQUERIDO)` : c.header
+  );
 
-  const ws = XLSX.utils.aoa_to_sheet([headers, hints, examples]);
-
-  // Style header row bold — basic column width
-  const colWidths = CSV_COLUMNS.map((c) => ({ wch: Math.max(c.header.length, 18) }));
+  const ws = XLSX.utils.aoa_to_sheet([headers]);
+  const colWidths = CSV_COLUMNS.map((c) => ({ wch: Math.max(c.header.length + 13, 22) }));
   ws['!cols'] = colWidths;
-
-  // Mark required columns with a note
-  CSV_COLUMNS.forEach((col, i) => {
-    if (col.required) {
-      const cellRef = XLSX.utils.encode_cell({ r: 0, c: i });
-      if (ws[cellRef]) {
-        ws[cellRef].v = `${col.header} (REQUERIDO)`;
-      }
-    }
-  });
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Productos');
 
-  // Instructions sheet
-  const instrData = [
+  // Instructions sheet — column reference + hints + examples
+  const instrRows: string[][] = [
     ['INSTRUCCIONES — FastPublisher para Mercado Libre'],
     [''],
-    ['1. Completá las filas desde la fila 4 en adelante (fila 1 = columnas, fila 2 = descripción, fila 3 = ejemplo).'],
-    ['2. Columnas REQUERIDAS: descripcion_corta y precio. El resto se completa automáticamente.'],
+    ['1. En la hoja "Productos", agregá tus productos a partir de la fila 2.'],
+    ['2. Solo son obligatorias: descripcion_corta (REQUERIDO) y precio (REQUERIDO).'],
     ['3. Para múltiples fotos, separá las URLs con | (pipe): https://foto1.jpg|https://foto2.jpg'],
     ['4. Condición: new (nuevo), usado, o refurbished (reacondicionado)'],
     ['5. Precio: solo el número, sin puntos ni comas. Ej: 250000'],
-    ['6. Guardá el archivo y subilo en FastPublisher usando "Importar Excel/CSV"'],
+    ['6. Guardá el archivo y subilo en FastPublisher usando el botón "Subir archivo".'],
+    [''],
+    ['REFERENCIA DE COLUMNAS:'],
+    ['Columna', 'Obligatoria', 'Descripción', 'Ejemplo'],
   ];
-  const wsInstr = XLSX.utils.aoa_to_sheet(instrData);
-  wsInstr['!cols'] = [{ wch: 80 }];
+  CSV_COLUMNS.forEach((c) => {
+    instrRows.push([
+      c.header,
+      c.required ? 'SÍ' : 'No',
+      c.hint,
+      c.example,
+    ]);
+  });
+
+  const wsInstr = XLSX.utils.aoa_to_sheet(instrRows);
+  wsInstr['!cols'] = [{ wch: 25 }, { wch: 12 }, { wch: 65 }, { wch: 45 }];
   XLSX.utils.book_append_sheet(wb, wsInstr, 'Instrucciones');
 
   XLSX.writeFile(wb, 'fastpublisher-plantilla.xlsx');

@@ -318,3 +318,97 @@
 - Local uploaded images (`/uploads/...`) require `IMAGE_PUBLIC_BASE_URL=https://your-domain.com` to be usable in real ML publishing. In dry-run mode they always work.
 - `IMAGE_PUBLIC_BASE_URL` must start with `https://` — http:// is rejected as non-publishable.
 - The image preparation layer runs server-side only — `prepare-images.ts` must never be imported in client components.
+
+---
+
+## 20. Bulk Import — Excel/CSV workflow
+
+### 20a. Template download
+
+| # | Steps | Expected |
+|---|-------|----------|
+| 20a.1 | Click "Descargar plantilla Excel (.xlsx)" | File downloads as `fastpublisher-plantilla.xlsx` |
+| 20a.2 | Open downloaded xlsx in Excel/LibreOffice | "Productos" sheet has 1 header row; "Instrucciones" sheet has column reference |
+| 20a.3 | Check header row: required columns | `descripcion_corta (REQUERIDO)` and `precio (REQUERIDO)` are visibly marked |
+| 20a.4 | Click "Descargar plantilla CSV" | File downloads as `fastpublisher-plantilla.csv` |
+| 20a.5 | Open CSV in text editor | Row 1 = headers, rows 2+ start with `# ` (comment prefix) |
+| 20a.6 | Open CSV in Excel on Windows | No encoding corruption — accents (á é ñ) display correctly (UTF-8 BOM) |
+| 20a.7 | Upload the downloaded CSV template without adding data | App processes 0 rows; no error toast |
+| 20a.8 | Upload the downloaded xlsx template without adding data | App processes 0 rows; no error toast |
+
+### 20b. File upload — drag/drop and click
+
+| # | Steps | Expected |
+|---|-------|----------|
+| 20b.1 | Drag a .xlsx file onto the drop zone | Blue highlight appears on dragenter; file processed after drop |
+| 20b.2 | Drag a .csv file onto the drop zone | Same as 20b.1 |
+| 20b.3 | Click the drop zone | File picker opens, accepts .xlsx, .xls, .csv |
+| 20b.4 | Select a non-supported file (.txt, .json) | Alert: "Subí un archivo .xlsx (Excel) o .csv" |
+| 20b.5 | Upload a .xlsx with 5 valid products | Results shown: 5 products with green checkmarks |
+
+### 20c. Parser — valid rows
+
+| # | Steps | Expected |
+|---|-------|----------|
+| 20c.1 | Upload `tests/fixtures/valid-appliances.csv` | 3 rows, 0 errors |
+| 20c.2 | Check row 1 (Samsung heladera) | Brand=Samsung, type=refrigerator, price=250.000, condition=nuevo |
+| 20c.3 | Check row 2 (LG lavarropas) | type=washing_machine, capacity=8, localPickUp=true |
+| 20c.4 | Check row 3 (Panasonic microondas) | 2 images shown (pipe-separated in CSV) |
+| 20c.5 | Upload CSV with `tipo_producto=cafetera` | Row type = coffee_maker, overrides inference |
+| 20c.6 | Upload CSV with images separated by `;` | Both images parsed and shown |
+
+### 20d. Parser — invalid and mixed rows
+
+| # | Steps | Expected |
+|---|-------|----------|
+| 20d.1 | Upload `tests/fixtures/invalid-appliances.csv` | Mix of error + warning rows; errors shown in red |
+| 20d.2 | Row with empty `descripcion_corta` | Shows as error: "La columna está vacía" |
+| 20d.3 | Row with missing price | Status=warnings (amber); price shown as missing field |
+| 20d.4 | Row with garbage brand (e.g., "asd") | Shows as error with brand field error; NOT also in missing fields |
+| 20d.5 | Upload `tests/fixtures/mixed-appliances.csv` | Mix of ok/warnings/error rows; summary counts correct |
+
+### 20e. Legacy headers
+
+| # | Steps | Expected |
+|---|-------|----------|
+| 20e.1 | Upload `tests/fixtures/legacy-headers.csv` (uses `imagen_url`, `capacidad`, `watts`) | 2 rows, 0 errors |
+| 20e.2 | Check row 1 image | Parsed from `imagen_url` column |
+| 20e.3 | Check row 1 capacity | Parsed from `capacidad` column as `280` |
+
+### 20f. Inline editing
+
+| # | Steps | Expected |
+|---|-------|----------|
+| 20f.1 | Click "Editar" on a warnings row | Edit panel expands with 6 fields |
+| 20f.2 | Change price from empty to 250000 | Row status updates from warnings → ok/warnings |
+| 20f.3 | Set condition to "Nuevo" | Draft updated; payload rebuilt |
+| 20f.4 | Enter garbage brand "asd" | Row status becomes error; brand error shows in edit panel |
+| 20f.5 | Click "Cerrar" on edit panel | Panel collapses |
+
+### 20g. Bulk dry-run publish
+
+| # | Steps | Expected |
+|---|-------|----------|
+| 20g.1 | Upload valid CSV (3+ valid rows), click "Publicar X — dry-run" | Confirm modal appears |
+| 20g.2 | Confirm modal shows dry-run notice | Blue "Dry-run activo" banner visible |
+| 20g.3 | Click "Simular" | Rows show spinner → dry_run status (flask icon) |
+| 20g.4 | Check `/history` page | Entries with DRY_RUN status appear |
+| 20g.5 | Error rows are excluded from publish | Error rows skip, summary shows correct publishable count |
+| 20g.6 | Warnings rows included in publish | Published successfully (or with warnings noted) |
+
+### 20h. Export JSON
+
+| # | Steps | Expected |
+|---|-------|----------|
+| 20h.1 | After upload, click "Exportar JSON" | Downloads `ml-bulk-drafts-{timestamp}.json` |
+| 20h.2 | Open exported JSON | Array of ML-formatted payloads; each has `row`, `draft_title`, ML fields |
+
+### 20i. Automated tests
+
+```bash
+# Run all parser unit tests (71 tests, ~5 seconds)
+npm run test:bulk
+```
+
+All 71 tests should pass. Run this after any change to `src/lib/csv/` or `src/lib/validation/`.
+

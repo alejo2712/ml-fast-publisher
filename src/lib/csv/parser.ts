@@ -1,8 +1,8 @@
-import type { Condition, ProductDraft } from '@/types';
+import type { ApplianceType, Condition, ProductDraft } from '@/types';
 import { inferProduct } from '@/lib/inference';
 import { buildProductDraft, buildMLPayload } from '@/lib/payload-builder';
-import { getMissingFields } from '@/lib/validation';
-import { CSV_COLUMNS, CSV_HEADERS } from './template';
+import { validateDraft } from '@/lib/validation';
+import { CSV_COLUMNS } from './template';
 import type { MLPayload, MissingField } from '@/types';
 
 export interface CsvRowResult {
@@ -11,7 +11,7 @@ export interface CsvRowResult {
   draft: ProductDraft | null;
   payload: MLPayload | null;
   missingFields: MissingField[];
-  errors: string[];           // hard parse errors
+  errors: string[];           // hard parse errors + field validation errors
   status: 'ok' | 'warnings' | 'error';
 }
 
@@ -51,8 +51,9 @@ function parseCSVLine(line: string): string[] {
 function parseCSV(text: string): { headers: string[]; rows: Record<string, string>[] } {
   const lines = text
     .split('\n')
-    .map((l) => l.replace(/\r$/, ''))
-    .filter((l) => l.trim().length > 0);
+    .map((l) => l.replace(/\r$/, '').replace(/^﻿/, '')) // strip BOM if present
+    .filter((l) => l.trim().length > 0)
+    .filter((l) => !l.trimStart().startsWith('#')); // skip comment/hint rows
 
   if (lines.length === 0) return { headers: [], rows: [] };
 
@@ -80,12 +81,69 @@ function normalizeCondition(raw: string): Condition | undefined {
   return undefined;
 }
 
+/**
+ * Maps Spanish/common product type names to ApplianceType enum values.
+ * Lets the tipo_producto column override inference when provided.
+ */
+const PRODUCT_TYPE_MAP: Record<string, ApplianceType> = {
+  heladera: 'refrigerator',
+  refrigerador: 'refrigerator',
+  frigorífico: 'refrigerator',
+  frigorifico: 'refrigerator',
+  lavarropas: 'washing_machine',
+  lavadora: 'washing_machine',
+  secadora: 'dryer',
+  secarropas: 'dryer',
+  lavavajillas: 'dishwasher',
+  lavaplatos: 'dishwasher',
+  horno: 'oven',
+  cocina: 'stove',
+  anafe: 'stove',
+  freezer: 'freezer',
+  congelador: 'freezer',
+  microondas: 'microwave',
+  'freidora de aire': 'air_fryer',
+  'air fryer': 'air_fryer',
+  airfryer: 'air_fryer',
+  freidora: 'air_fryer',
+  licuadora: 'blender',
+  procesadora: 'blender',
+  cafetera: 'coffee_maker',
+  'pava eléctrica': 'electric_kettle',
+  'pava electrica': 'electric_kettle',
+  hervidor: 'electric_kettle',
+  aspiradora: 'vacuum_cleaner',
+  plancha: 'iron',
+  tostadora: 'toaster',
+  mixer: 'mixer',
+  batidora: 'mixer',
+};
+
+function normalizeProductType(raw: string): ApplianceType | undefined {
+  const v = raw.toLowerCase().trim();
+  if (!v) return undefined;
+  return PRODUCT_TYPE_MAP[v];
+}
+
 // Legacy header aliases for backward compatibility with old CSV templates
 const LEGACY_HEADERS: Record<string, string> = {
   imagen_url: 'imagenes',
   capacidad: 'capacidad_litros',
   watts: 'potencia_watts',
 };
+
+/**
+ * Split image URLs — supports pipe (|), semicolon (;) and comma (,) separators.
+ * Priority: pipe > semicolon > comma (comma is last since it's ambiguous in CSV).
+ */
+function splitImageUrls(raw: string): string[] {
+  const trimmed = raw.trim();
+  if (!trimmed) return [];
+  if (trimmed.includes('|')) return trimmed.split('|').map((u) => u.trim()).filter(Boolean);
+  if (trimmed.includes(';')) return trimmed.split(';').map((u) => u.trim()).filter(Boolean);
+  if (trimmed.includes(',')) return trimmed.split(',').map((u) => u.trim()).filter(Boolean);
+  return [trimmed];
+}
 
 function mapRowToOverrides(row: Record<string, string>): Partial<ProductDraft> {
   // Normalize row: apply legacy aliases so old column names still work
@@ -129,7 +187,7 @@ function mapRowToOverrides(row: Record<string, string>): Partial<ProductDraft> {
   const voltage = get('voltage');
   if (voltage) overrides.voltage = voltage;
 
-  // capacity_litros and capacity_kg — prefer the more specific one
+  // capacity_litros preferred over capacity_kg (both map to ProductDraft.capacity)
   const capacityL = get('capacity');
   const capacityKg = get('capacity_kg');
   if (capacityL && !isNaN(parseFloat(capacityL))) {
@@ -150,10 +208,10 @@ function mapRowToOverrides(row: Record<string, string>): Partial<ProductDraft> {
   const description = get('description');
   if (description) overrides.description = description;
 
-  // Images — pipe-separated URLs
+  // Images — pipe, semicolon or comma separated
   const imageRaw = get('images');
   if (imageRaw) {
-    overrides.images = imageRaw.split('|').map((u) => u.trim()).filter(Boolean);
+    overrides.images = splitImageUrls(imageRaw);
   }
 
   // Shipping overrides
@@ -161,7 +219,10 @@ function mapRowToOverrides(row: Record<string, string>): Partial<ProductDraft> {
   const localPickupRaw = get('local_pickup');
   const freeShippingRaw = get('free_shipping');
   if (shippingMode || localPickupRaw || freeShippingRaw) {
-    const parseBool = (v: string) => v.toLowerCase() === 'si' || v.toLowerCase() === 'yes' || v === '1' || v.toLowerCase() === 'true';
+    const parseBool = (v: string) => {
+      const lc = v.toLowerCase();
+      return lc === 'si' || lc === 'sí' || lc === 'yes' || v === '1' || lc === 'true';
+    };
     overrides.shipping = {
       mode: (['me2', 'custom', 'not_specified'].includes(shippingMode) ? shippingMode : 'me2') as import('@/types').ShippingMode,
       localPickUp: localPickupRaw ? parseBool(localPickupRaw) : false,
@@ -170,6 +231,17 @@ function mapRowToOverrides(row: Record<string, string>): Partial<ProductDraft> {
   }
 
   return overrides;
+}
+
+/**
+ * Extract tipo_producto override from a row (used to override inference.applianceType).
+ * Returns undefined if column is absent or value is unrecognized.
+ */
+function extractProductType(row: Record<string, string>): ApplianceType | undefined {
+  const col = CSV_COLUMNS.find((c) => c.key === 'product_type');
+  if (!col) return undefined;
+  const raw = row[col.header] ?? '';
+  return normalizeProductType(raw);
 }
 
 /**
@@ -218,13 +290,39 @@ export async function parseCsvText(text: string): Promise<CsvParseResult> {
 
     try {
       const inference = await inferProduct(inputText);
-      const overrides = mapRowToOverrides(row);
-      const draft = buildProductDraft(inference, overrides);
-      const payload = buildMLPayload(draft);
-      const missingFields = getMissingFields(draft);
 
-      const status = errors.length > 0 ? 'error' : missingFields.length > 0 ? 'warnings' : 'ok';
-      results.push({ rowIndex: i + 1, rawRow: row, draft, payload, missingFields, errors, status });
+      // Apply product type override if provided — takes priority over inference
+      const productTypeOverride = extractProductType(row);
+      const effectiveInference = productTypeOverride
+        ? { ...inference, applianceType: productTypeOverride }
+        : inference;
+
+      const overrides = mapRowToOverrides(row);
+      const draft = buildProductDraft(effectiveInference, overrides);
+      const payload = buildMLPayload(draft);
+      const validation = validateDraft(draft);
+
+      // Capture field errors (invalid values) as error strings for display
+      const fieldErrorStrings = validation.fieldErrors.map(
+        (fe) => `${fe.label}: ${fe.message}`
+      );
+      errors.push(...fieldErrorStrings);
+
+      // Status: error if parse errors or field validation errors; warnings if only missing fields
+      const status: CsvRowResult['status'] =
+        errors.length > 0 ? 'error' :
+        validation.missingFields.length > 0 ? 'warnings' :
+        'ok';
+
+      results.push({
+        rowIndex: i + 1,
+        rawRow: row,
+        draft,
+        payload,
+        missingFields: validation.missingFields,
+        errors,
+        status,
+      });
     } catch (err) {
       errors.push(`Error al procesar: ${String(err)}`);
       results.push({ rowIndex: i + 1, rawRow: row, draft: null, payload: null, missingFields: [], errors, status: 'error' });
@@ -242,7 +340,7 @@ export async function parseCsvText(text: string): Promise<CsvParseResult> {
 export function exportAllPayloads(rows: CsvRowResult[]): void {
   const payloads = rows
     .filter((r) => r.payload !== null)
-    .map((r, i) => ({ row: r.rowIndex, draft_title: r.draft?.title, ...r.payload }));
+    .map((r) => ({ row: r.rowIndex, draft_title: r.draft?.title, ...r.payload }));
 
   const json = JSON.stringify(payloads, null, 2);
   const blob = new Blob([json], { type: 'application/json' });

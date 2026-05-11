@@ -133,7 +133,9 @@ export function validateDraft(draft: ProductDraft): ValidationResult {
           options: attr.options,
           placeholder: attr.placeholder,
         });
-      } else if (typeof fieldValue === 'string' && isGarbage(fieldValue)) {
+      } else if (attr.type === 'text' && typeof fieldValue === 'string' && isGarbage(fieldValue)) {
+        // Only run garbage check on text-type attributes — numeric/select fields like
+        // capacity ('320') would wrongly match the digits-only garbage pattern otherwise.
         fieldErrors.push({ id: attr.id.toLowerCase(), label: attr.label, message: `Ingresá un valor válido para ${attr.label}.` });
       }
     }

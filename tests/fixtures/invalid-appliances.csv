@@ -1,0 +1,6 @@
+titulo,descripcion_corta,marca,condicion,precio,stock,imagenes
+# This row is a comment and should be skipped
+,,,,,,
+Test,asd,,nuevo,100,1,
+Heladera Samsung No Frost,Heladera Samsung no frost 320 litros blanca,Samsung,nuevo,,1,https://http2.mlstatic.com/D_NQ_NP_sample.jpg
+Heladera con precio basura,Heladera LG usada en buen estado,LG,usado,abc,1,https://http2.mlstatic.com/D_NQ_NP_sample.jpg
