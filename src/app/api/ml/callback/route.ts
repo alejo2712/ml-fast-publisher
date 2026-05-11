@@ -13,17 +13,25 @@ export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get('code');
   const error = request.nextUrl.searchParams.get('error');
 
+  const origin = request.nextUrl.origin;
+
   if (error) {
-    return NextResponse.json({ error: `ML OAuth error: ${error}` }, { status: 400 });
+    return NextResponse.redirect(
+      `${origin}/settings/mercadolibre?error=${encodeURIComponent(error)}`
+    );
   }
 
   if (!code) {
-    return NextResponse.json({ error: 'Missing authorization code' }, { status: 400 });
+    return NextResponse.redirect(
+      `${origin}/settings/mercadolibre?error=missing_code`
+    );
   }
 
   const credentials = getCredentials();
   if (!credentials) {
-    return NextResponse.json({ error: 'Credentials not configured' }, { status: 503 });
+    return NextResponse.redirect(
+      `${origin}/settings/mercadolibre?error=credentials_not_configured`
+    );
   }
 
   try {
@@ -55,12 +63,11 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const origin = request.nextUrl.origin;
-    return NextResponse.redirect(`${origin}/?ml_connected=true`);
+    return NextResponse.redirect(`${origin}/settings/mercadolibre?connected=true`);
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Token exchange failed' },
-      { status: 500 }
+    const msg = err instanceof Error ? err.message : 'Token exchange failed';
+    return NextResponse.redirect(
+      `${origin}/settings/mercadolibre?error=${encodeURIComponent(msg)}`
     );
   }
 }

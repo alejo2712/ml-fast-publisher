@@ -3,15 +3,16 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { signOut } from 'next-auth/react';
-import { Zap, LayoutDashboard, FileText, BookTemplate, History, LogOut, ChevronRight, Settings } from 'lucide-react';
+import { Zap, LayoutDashboard, FileText, BookTemplate, History, LogOut, ChevronRight, Settings, ShoppingBag } from 'lucide-react';
 import { cn } from '@/components/ui';
 
 const NAV_ITEMS = [
-  { href: '/dashboard',  label: 'Dashboard',  icon: LayoutDashboard },
-  { href: '/drafts',     label: 'Borradores', icon: FileText },
-  { href: '/templates',  label: 'Plantillas', icon: BookTemplate },
-  { href: '/history',    label: 'Historial',  icon: History },
-  { href: '/settings',   label: 'Preferencias', icon: Settings },
+  { href: '/dashboard',               label: 'Dashboard',       icon: LayoutDashboard },
+  { href: '/drafts',                  label: 'Borradores',      icon: FileText },
+  { href: '/templates',               label: 'Plantillas',      icon: BookTemplate },
+  { href: '/history',                 label: 'Historial',       icon: History },
+  { href: '/settings',                label: 'Preferencias',    icon: Settings },
+  { href: '/settings/mercadolibre',   label: 'Mercado Libre',   icon: ShoppingBag },
 ];
 
 export function AppNav({ userName }: { userName?: string | null }) {

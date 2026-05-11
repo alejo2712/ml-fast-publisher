@@ -228,6 +228,40 @@
 
 ---
 
+## 15. Mercado Libre settings page (`/settings/mercadolibre`)
+
+| # | Steps | Expected |
+|---|-------|----------|
+| 15.1 | Visit `/settings/mercadolibre` while logged in | Page loads, status cards visible |
+| 15.2 | `MERCADOLIBRE_CLIENT_ID` not set | "Credenciales configuradas" row shows red X with instructions |
+| 15.3 | All credentials set, not yet OAuth'd | "Cuenta ML conectada" row shows red X |
+| 15.4 | `MERCADOLIBRE_DRY_RUN=true` | "Modo dry-run activo (seguro)" row shows green check |
+| 15.5 | `MERCADOLIBRE_DRY_RUN=false` | Row shows "Modo publicación real" with amber indicator |
+| 15.6 | `IMAGE_PUBLIC_BASE_URL` empty | Image hosting row shows not configured, explains dry-run-only limitation |
+| 15.7 | `IMAGE_PUBLIC_BASE_URL=https://myapp.example.com` | Row shows green check with hostname |
+| 15.8 | `IMAGE_PUBLIC_BASE_URL=http://...` | Row shows red X with "debe empezar con https://" warning |
+| 15.9 | Click "Actualizar" button | Status refetched, timestamp changes |
+| 15.10 | Click copy button next to Redirect URI | URL copied to clipboard, toast "URL copiada" |
+| 15.11 | Click "Conectar cuenta ML" | Redirects to ML auth page (or 503 if no credentials) |
+| 15.12 | Complete OAuth flow | Redirected back to `/settings/mercadolibre?connected=true`, toast success |
+| 15.13 | OAuth error from ML | Redirected to `/settings/mercadolibre?error=...`, toast error |
+| 15.14 | Click "Ejecutar test dry-run" | Spinner, then success result shown + toast |
+| 15.15 | After test dry-run | Entry visible in `/history` with status DRY_RUN |
+| 15.16 | Warnings section | Only visible when there are actionable warnings |
+
+---
+
+## 16. Real-publish safety gate
+
+| # | Steps | Expected |
+|---|-------|----------|
+| 16.1 | `MERCADOLIBRE_DRY_RUN=false` → open confirm modal | Confirmation checkbox visible: "Entiendo que esto publicará artículos reales..." |
+| 16.2 | Click "Publicar ahora" with checkbox unchecked | Button stays disabled |
+| 16.3 | Tick checkbox → click "Publicar ahora" | Publish proceeds |
+| 16.4 | `MERCADOLIBRE_DRY_RUN=true` → open confirm modal | No checkbox shown (dry-run is safe) |
+
+---
+
 ## Known limitations (not bugs)
 
 - ML OAuth tokens are also cached in-memory — cleared on server restart, but DB fallback restores them on next request to `/api/ml/status` or publish.

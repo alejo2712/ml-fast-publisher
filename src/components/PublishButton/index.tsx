@@ -38,6 +38,7 @@ function ConfirmModal({
   onCancel: () => void;
   isPublishing: boolean;
 }) {
+  const [realPublishConfirmed, setRealPublishConfirmed] = useState(false);
   const blockedByImages = !mlStatus.dryRun && hasLocalImages;
 
   return (
@@ -132,6 +133,21 @@ function ConfirmModal({
           </p>
         </div>
 
+        {/* Real-publish confirmation checkbox */}
+        {!mlStatus.dryRun && !blockedByImages && (
+          <label className="flex items-start gap-2.5 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={realPublishConfirmed}
+              onChange={(e) => setRealPublishConfirmed(e.target.checked)}
+              className="mt-0.5 rounded border-gray-300 text-indigo-600 cursor-pointer"
+            />
+            <span className="text-xs text-gray-700 leading-snug">
+              Entiendo que esto publicará artículos <strong>reales</strong> en Mercado Libre y que no se puede deshacer automáticamente.
+            </span>
+          </label>
+        )}
+
         <div className="flex gap-3">
           <button
             onClick={onCancel}
@@ -142,7 +158,7 @@ function ConfirmModal({
           </button>
           <button
             onClick={onConfirm}
-            disabled={isPublishing || blockedByImages}
+            disabled={isPublishing || blockedByImages || (!mlStatus.dryRun && !realPublishConfirmed)}
             className={cn(
               'flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all',
               mlStatus.dryRun

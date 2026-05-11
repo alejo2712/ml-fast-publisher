@@ -264,6 +264,22 @@ npm run dev
 - [x] PublishButton: amber warning + modal block when local images + real mode; informational in dry-run
 - [x] ReviewStep: local image warning banner always visible when /uploads/ paths present
 - [x] Build passing (26 routes, 0 TypeScript errors)
+- [x] Security: .gitignore updated — explicit coverage for .env.production, .env.development, .env.staging, .env.test
+- [x] ML OAuth: callback now redirects to /settings/mercadolibre?connected=true (or ?error=...) instead of home
+- [x] /api/ml/status: enhanced with imageHosting status and warnings array (no tokens exposed)
+- [x] /api/ml/test-dry-run: POST endpoint — runs sample refrigerator payload through full pipeline, always safe
+- [x] /settings/mercadolibre: ML connection status, credentials status, image hosting, OAuth button, callback URL, dry-run test
+- [x] Nav: Mercado Libre settings link added (ShoppingBag icon)
+- [x] PublishButton: real-publish confirmation checkbox (must tick before confirm when DRY_RUN=false)
+- [x] Build passing (28 routes, 0 TypeScript errors)
+
+### ML OAuth page (src/components/MLConnectionSettings/)
+- Fetches /api/ml/status on mount and on ?connected=true callback
+- Shows per-check status rows: credentials, connection, dry-run mode, image hosting
+- Warnings surfaced from API — guides user to fix issues before going live
+- Callback URL copy button + instructions for ML app registration
+- "Reconectar cuenta ML" / "Conectar cuenta ML" button (links to /api/ml/auth)
+- Dry-run test button → POST /api/ml/test-dry-run → shows result inline + records in history
 
 ## Next Session Instructions
 1. Add real ML OAuth test with sandbox credentials — verify callback → DB persist → publish flow end-to-end
