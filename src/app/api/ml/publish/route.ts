@@ -8,6 +8,7 @@ import { getCredentials, refreshAccessToken } from '@/lib/mercadolibre/auth';
 import { publishBulkItems, isDryRun } from '@/lib/mercadolibre/publish';
 import { runPreflight } from '@/lib/mercadolibre/preflight';
 import { prepareImages } from '@/lib/images/prepare-images';
+import { getDeploymentEnvironment } from '@/lib/env/runtime';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
 import type { MLPayload } from '@/types';
@@ -150,7 +151,10 @@ export async function POST(request: NextRequest) {
   }
 
   // ── Publish ───────────────────────────────────────────────────────────────
+  const publishStart = Date.now();
   const result = await publishBulkItems(items, accessToken);
+  const publishDurationMs = Date.now() - publishStart;
+  const environment = getDeploymentEnvironment();
 
   if (userId) {
     await Promise.allSettled(
@@ -170,6 +174,8 @@ export async function POST(request: NextRequest) {
             errorMessage: r.status === 'failed' ? r.message : null,
             preflightResult: preflightResults[i] ? (preflightResults[i] as object) : undefined,
             imagePrepResult: imgPrep as object,
+            environment,
+            durationMs: Math.round(publishDurationMs / items.length),
           },
         });
       })

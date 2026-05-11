@@ -94,10 +94,38 @@ Vercel auto-deploys. After deploy completes:
 
 ## 5. Vercel-Specific Notes
 
-- **File uploads**: `public/uploads/` is a local filesystem path. On Vercel (serverless), uploaded files do NOT persist between invocations. For production, replace the upload handler with an S3/R2/Cloudinary bucket and update `IMAGE_PUBLIC_BASE_URL` accordingly.
+### File uploads — CRITICAL LIMITATION
+
+On Vercel (serverless), the local filesystem is **ephemeral** — files written during one request are not available to subsequent requests running on different instances.
+
+**Impact:** Images uploaded via the UI (`POST /api/uploads`) use local filesystem storage. These files:
+- Are accessible during the same request
+- May not persist between function invocations
+- Will appear broken if Vercel scales or restarts instances
+
+**Mitigation options:**
+
+| Option | Effort | Notes |
+|---|---|---|
+| Use external HTTPS image URLs | None | Add images from external CDN/hosting directly in the URL field |
+| Set `IMAGE_PUBLIC_BASE_URL` to a persistent server | None | Works if you self-host (VPS/bare metal) |
+| Migrate upload storage to S3/R2/Cloudinary | Medium | Production-grade; see future migration path below |
+
+**Future cloud storage migration:**
+When ready to migrate, implement `CloudStorageUploadStrategy` in `src/lib/uploads/` — the factory in `strategy.ts` already has the extension point:
+```typescript
+// src/lib/uploads/strategy.ts
+if (process.env.CLOUDINARY_URL) return new CloudinaryUploadStrategy();
+if (process.env.AWS_S3_BUCKET)  return new S3UploadStrategy();
+```
+The `UploadStrategy` interface is fully defined in `src/lib/uploads/types.ts`.
+
+### Other Vercel notes
+
 - **Cold starts**: ML tokens are cached in memory. On cold start the first request re-fetches tokens from DB — this is expected behavior.
 - **Function timeout**: Default Vercel function timeout is 10s (hobby) or 60s (pro). Bulk publish of many items may hit this limit — run bulk exports locally or increase via `vercel.json`.
 - **Build command**: `npm run build` — standard Next.js build, no custom steps needed.
+- **Environment detection**: The app reads `VERCEL_ENV` to detect `local` / `preview` / `production`. This is set automatically by Vercel at build time and visible in `/settings/system` and `/settings/mercadolibre`.
 
 ---
 

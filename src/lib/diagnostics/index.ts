@@ -10,6 +10,7 @@
 import { validateEnv } from '@/lib/env/server';
 import { getCredentials, getStoredTokens } from '@/lib/mercadolibre/auth';
 import { isDryRun } from '@/lib/mercadolibre/publish';
+import { getDeploymentEnvironment, hasEphemeralFilesystem, getEnvironmentLabel } from '@/lib/env/runtime';
 import { prisma } from '@/lib/db';
 
 export type CheckStatus = 'ok' | 'warning' | 'error';
@@ -31,11 +32,14 @@ export interface DiagnosticsResult {
   status: CheckStatus;
   timestamp: string;
   version: string;
+  /** Current deployment environment */
+  environment: 'local' | 'preview' | 'production';
   env: SubsystemDiagnostic;
   database: SubsystemDiagnostic;
   auth: SubsystemDiagnostic;
   mercadolibre: SubsystemDiagnostic;
   imageHosting: SubsystemDiagnostic;
+  uploads: SubsystemDiagnostic;
 }
 
 function worstStatus(...statuses: CheckStatus[]): CheckStatus {
@@ -200,6 +204,51 @@ function checkImageHosting(): SubsystemDiagnostic {
   return { status: subsystemStatus(checks), checks };
 }
 
+function checkUploads(): SubsystemDiagnostic {
+  const checks: DiagnosticCheck[] = [];
+  const isVercelEnv = hasEphemeralFilesystem();
+  const imageBaseUrl = process.env.IMAGE_PUBLIC_BASE_URL ?? '';
+  const dryRunActive = isDryRun();
+
+  // Storage backend
+  checks.push({
+    id: 'backend',
+    label: 'Backend de almacenamiento de imágenes',
+    status: isVercelEnv ? 'warning' : 'ok',
+    detail: isVercelEnv
+      ? 'Filesystem local — EFÍMERO en Vercel. Las imágenes subidas se perderán entre reinicios. Migrá a S3/R2/Cloudinary para producción.'
+      : 'Filesystem local — persistente en este entorno (desarrollo / servidor propio)',
+  });
+
+  // Public access
+  if (imageBaseUrl && imageBaseUrl.startsWith('https://')) {
+    let hostname = imageBaseUrl;
+    try { hostname = new URL(imageBaseUrl).hostname; } catch { /* ignore */ }
+    checks.push({
+      id: 'public_access',
+      label: 'Acceso público a imágenes',
+      status: 'ok',
+      detail: `Imágenes accesibles en: ${hostname}/uploads/... — apto para publicación real`,
+    });
+  } else if (!dryRunActive) {
+    checks.push({
+      id: 'public_access',
+      label: 'Acceso público a imágenes',
+      status: 'error',
+      detail: 'IMAGE_PUBLIC_BASE_URL no configurado — las imágenes subidas no son accesibles por Mercado Libre. Bloqueará publicación real.',
+    });
+  } else {
+    checks.push({
+      id: 'public_access',
+      label: 'Acceso público a imágenes',
+      status: 'warning',
+      detail: 'IMAGE_PUBLIC_BASE_URL no configurado — modo dry-run OK, pero publicación real bloqueada hasta configurarlo.',
+    });
+  }
+
+  return { status: subsystemStatus(checks), checks };
+}
+
 // ── Main entry point ──────────────────────────────────────────────────────────
 
 export async function runDiagnostics(): Promise<DiagnosticsResult> {
@@ -209,17 +258,21 @@ export async function runDiagnostics(): Promise<DiagnosticsResult> {
   const auth = checkAuth();
   const mercadolibre = checkMercadoLibre();
   const imageHosting = checkImageHosting();
+  const uploads = checkUploads();
+  const environment = getDeploymentEnvironment();
 
-  const overall = worstStatus(env.status, database.status, auth.status, mercadolibre.status, imageHosting.status);
+  const overall = worstStatus(env.status, database.status, auth.status, mercadolibre.status, imageHosting.status, uploads.status);
 
   return {
     status: overall,
     timestamp: new Date().toISOString(),
     version: process.env.npm_package_version ?? '0.1.0',
+    environment,
     env,
     database,
     auth,
     mercadolibre,
     imageHosting,
+    uploads,
   };
 }

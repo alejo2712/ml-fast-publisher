@@ -3,17 +3,18 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { signOut } from 'next-auth/react';
-import { Zap, LayoutDashboard, FileText, BookTemplate, History, LogOut, ChevronRight, Settings, ShoppingBag, Activity } from 'lucide-react';
+import { Zap, LayoutDashboard, FileText, BookTemplate, History, LogOut, ChevronRight, Settings, ShoppingBag, Activity, ClipboardCheck } from 'lucide-react';
 import { cn } from '@/components/ui';
 
 const NAV_ITEMS = [
-  { href: '/dashboard',               label: 'Dashboard',       icon: LayoutDashboard },
-  { href: '/drafts',                  label: 'Borradores',      icon: FileText },
-  { href: '/templates',               label: 'Plantillas',      icon: BookTemplate },
-  { href: '/history',                 label: 'Historial',       icon: History },
-  { href: '/settings',                label: 'Preferencias',    icon: Settings },
-  { href: '/settings/mercadolibre',   label: 'Mercado Libre',   icon: ShoppingBag },
-  { href: '/settings/system',         label: 'Sistema',         icon: Activity },
+  { href: '/dashboard',                          label: 'Dashboard',       icon: LayoutDashboard,  exact: false },
+  { href: '/drafts',                             label: 'Borradores',      icon: FileText,         exact: false },
+  { href: '/templates',                          label: 'Plantillas',      icon: BookTemplate,     exact: false },
+  { href: '/history',                            label: 'Historial',       icon: History,          exact: false },
+  { href: '/settings',                           label: 'Preferencias',    icon: Settings,         exact: true  },
+  { href: '/settings/mercadolibre',              label: 'Mercado Libre',   icon: ShoppingBag,      exact: true  },
+  { href: '/settings/system',                    label: 'Sistema',         icon: Activity,         exact: true  },
+  { href: '/settings/production-readiness',      label: 'Producción',      icon: ClipboardCheck,   exact: true  },
 ];
 
 export function AppNav({ userName }: { userName?: string | null }) {
@@ -33,8 +34,8 @@ export function AppNav({ userName }: { userName?: string | null }) {
 
       {/* Nav links */}
       <nav className="flex-1 px-2 py-4 space-y-0.5">
-        {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
-          const active = path === href || path.startsWith(href + '/');
+        {NAV_ITEMS.map(({ href, label, icon: Icon, exact }) => {
+          const active = exact ? path === href : (path === href || path.startsWith(href + '/'));
           return (
             <Link
               key={href}

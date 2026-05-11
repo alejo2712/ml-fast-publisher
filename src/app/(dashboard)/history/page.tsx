@@ -14,6 +14,7 @@ export default async function HistoryPage() {
     select: {
       id: true, mlItemId: true, permalink: true, status: true,
       dryRun: true, errorMessage: true, createdAt: true,
+      environment: true, durationMs: true,
       draft: { select: { title: true, applianceType: true } },
     },
   });

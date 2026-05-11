@@ -21,6 +21,7 @@ export async function GET() {
       ...diagnostics.env.checks.filter((c) => c.status === 'warning').map((c) => c.detail),
       ...diagnostics.mercadolibre.checks.filter((c) => c.status === 'warning').map((c) => c.detail),
       ...diagnostics.imageHosting.checks.filter((c) => c.status === 'warning').map((c) => c.detail),
+      ...diagnostics.uploads.checks.filter((c) => c.status === 'warning').map((c) => c.detail),
     ];
 
     const httpStatus = diagnostics.database.status === 'error' ? 503 : 200;
@@ -30,12 +31,14 @@ export async function GET() {
         status: diagnostics.status,
         timestamp: diagnostics.timestamp,
         version: diagnostics.version,
+        environment: diagnostics.environment,
         subsystems: {
           env: { status: diagnostics.env.status },
           database: { status: diagnostics.database.status },
           auth: { status: diagnostics.auth.status },
           mercadolibre: { status: diagnostics.mercadolibre.status },
           imageHosting: { status: diagnostics.imageHosting.status },
+          uploads: { status: diagnostics.uploads.status },
         },
         warnings: allWarnings,
         // Full diagnostics only for explicit detail request or system page

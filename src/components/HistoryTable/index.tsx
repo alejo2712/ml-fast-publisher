@@ -13,6 +13,8 @@ export interface HistoryEntry {
   dryRun: boolean;
   errorMessage: string | null;
   createdAt: Date;
+  environment?: string | null;
+  durationMs?: number | null;
   draft: { title: string; applianceType: string } | null;
 }
 
@@ -25,6 +27,7 @@ type StatusFilter = 'all' | 'PUBLISHED' | 'DRY_RUN' | 'FAILED' | 'PENDING';
 const STATUS_LABEL: Record<string, string> = {
   PUBLISHED: 'Publicado', DRY_RUN: 'Dry-run', FAILED: 'Fallido',
   PENDING: 'Pendiente', SKIPPED: 'Ignorado',
+  VALIDATION_FAILED: 'Validación fallida', PREFLIGHT_FAILED: 'Preflight fallido',
 };
 const STATUS_COLOR: Record<string, string> = {
   PUBLISHED: 'bg-emerald-100 text-emerald-700',
@@ -32,7 +35,20 @@ const STATUS_COLOR: Record<string, string> = {
   FAILED: 'bg-red-100 text-red-700',
   PENDING: 'bg-amber-100 text-amber-700',
   SKIPPED: 'bg-gray-100 text-gray-500',
+  VALIDATION_FAILED: 'bg-orange-100 text-orange-700',
+  PREFLIGHT_FAILED: 'bg-purple-100 text-purple-700',
 };
+
+const ENV_COLOR: Record<string, string> = {
+  production: 'bg-indigo-50 text-indigo-600 border border-indigo-200',
+  preview: 'bg-amber-50 text-amber-600 border border-amber-200',
+  local: 'bg-gray-50 text-gray-500 border border-gray-200',
+};
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
 
 export function HistoryTable({ items: initialItems }: HistoryTableProps) {
   const { toast } = useToast();
@@ -178,8 +194,19 @@ export function HistoryTable({ items: initialItems }: HistoryTableProps) {
 
                 {/* Badges + actions */}
                 <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
-                  {h.dryRun && (
+                  {/* Environment badge */}
+                  {h.environment && (
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ENV_COLOR[h.environment] ?? ENV_COLOR.local}`}>
+                      {h.environment === 'production' ? 'prod' : h.environment === 'preview' ? 'preview' : 'local'}
+                    </span>
+                  )}
+                  {/* Dry-run badge */}
+                  {h.dryRun && h.status !== 'DRY_RUN' && (
                     <span className="text-xs bg-blue-50 text-blue-600 border border-blue-200 px-2 py-0.5 rounded-full">dry-run</span>
+                  )}
+                  {/* Duration badge */}
+                  {h.durationMs != null && h.durationMs > 0 && (
+                    <span className="text-xs text-gray-400 font-mono">{formatDuration(h.durationMs)}</span>
                   )}
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLOR[h.status] ?? 'bg-gray-100 text-gray-500'}`}>
                     {STATUS_LABEL[h.status] ?? h.status}

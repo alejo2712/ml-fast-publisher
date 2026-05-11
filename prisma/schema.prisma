@@ -169,6 +169,8 @@ model PublishHistory {
   errorMessage    String?       @map("error_message") @db.Text
   preflightResult Json?         @map("preflight_result")   // structured PreflightResult from /api/ml/preflight
   imagePrepResult Json?         @map("image_prep_result")  // ImagePreparationResult from prepareImages
+  environment     String?       // "local" | "preview" | "production"
+  durationMs      Int?          @map("duration_ms")         // publish round-trip duration
   createdAt       DateTime      @default(now()) @map("created_at")
 
   user  User          @relation(fields: [userId], references: [id], onDelete: Cascade)

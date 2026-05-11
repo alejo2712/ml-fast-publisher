@@ -129,6 +129,15 @@ All routes in `src/app/api/` — server-side only, no ML credentials in client.
 - Title and price are NOT in templates — user must provide via text description
 - useCount incremented via `POST /api/templates/{id}` when user actually submits the form
 
+### Upload Strategy Abstraction
+- `src/lib/uploads/types.ts` — `UploadStrategy` interface, `UploadResult` type
+- `src/lib/uploads/local-strategy.ts` — `LocalUploadStrategy` (current implementation)
+- `src/lib/uploads/strategy.ts` — `getUploadStrategy()` factory; extend here when adding S3/R2/Cloudinary
+- **Ephemeral filesystem warning**: on Vercel serverless, local filesystem does not persist across requests
+- `hasEphemeralFilesystem()` in `src/lib/env/runtime.ts` detects if storage is ephemeral
+- `POST /api/uploads` returns `ephemeralWarning` field when storage is ephemeral
+- `GET /api/uploads/status` returns backend info for diagnostics
+
 ### Image Upload
 - API: `POST /api/uploads` — multipart form, validates type (JPG/PNG/WebP/GIF), max 5 MB
 - Files saved to `public/uploads/{userId}/{uuid}.{ext}`, served statically by Next.js
@@ -306,6 +315,27 @@ npm run dev
 - [x] docs/deployment/postgres.md — PostgreSQL setup guide (Homebrew, Docker, managed production)
 - [x] README: /api/health docs, environment validation docs, deployment links, updated architecture
 
+### Session 10 additions (production deployment readiness)
+- [x] src/lib/env/runtime.ts — getDeploymentEnvironment() (local/preview/production), hasEphemeralFilesystem(), isVercel()
+- [x] src/lib/uploads/types.ts — UploadStrategy interface, UploadResult type
+- [x] src/lib/uploads/local-strategy.ts — LocalUploadStrategy implementing UploadStrategy
+- [x] src/lib/uploads/strategy.ts — getUploadStrategy() factory with extension points for S3/R2/Cloudinary
+- [x] POST /api/uploads: refactored to use upload strategy; returns ephemeralWarning on Vercel; added GET /api/uploads/status for diagnostics
+- [x] Schema: PublishHistory gets `environment` (string?) and `durationMs` (int?) columns; prisma db push run
+- [x] /api/ml/publish: records environment + per-item durationMs in history; imports runtime.ts
+- [x] Diagnostics: checkUploads() subsystem added (backend ephemeral warning + public access check); DiagnosticsResult.environment added
+- [x] /api/health: returns environment field; includes uploads subsystem in response
+- [x] SystemSettings: shows environment badge (Local/Preview/Producción); Uploads subsystem card; link to production checklist
+- [x] /settings/production-readiness: ProductionReadiness component — ScoreBanner + 5 ReadinessGroups (DB, Auth, ML, Images, Environment); Vercel ephemeral warning
+- [x] Nav: Producción link added (ClipboardCheck icon); fixed active-match bug (exact: true for all settings sub-routes)
+- [x] PublishButton: Safe First Publish flow — 4 explicit confirmations required in real mode; confirm button red; real-mode header warning
+- [x] HistoryTable: environment badge, duration display, VALIDATION_FAILED/PREFLIGHT_FAILED labels; environment/durationMs added to HistoryEntry type
+- [x] History page: selects environment + durationMs from DB
+- [x] MLConnectionSettings: environment badge in header (fetches /api/health alongside /api/ml/status)
+- [x] next.config.ts: image remote patterns for mlstatic.com; Vercel notes comment
+- [x] docs/deployment/vercel.md: ephemeral filesystem section with migration path + future cloud storage extension guide
+- [x] Build passing (33 routes, 0 TypeScript errors)
+
 ### ML OAuth page (src/components/MLConnectionSettings/)
 - Fetches /api/ml/status on mount and on ?connected=true callback
 - Shows per-check status rows: credentials, connection, dry-run mode, image hosting
@@ -344,13 +374,13 @@ npm run dev
 - After disconnect: status refetched, readiness result cleared
 
 ## Next Session Instructions
-1. Run live OAuth flow with real ML sandbox credentials: connect → verify DB row → test dry-run → test preflight → verify disconnect clears DB row
-2. Add additional categories: mobile phones, mattresses (follow pattern in `src/config/categories/appliances.ts`)
-3. Persist bulk CSV results to `BulkUpload` DB table for history/audit
-4. Add Claude/OpenAI integration to replace deterministic inference (`src/lib/inference/index.ts` — swap adapter)
-5. For real ML publishing with uploaded images: add ML CDN image upload step before publish (POST /pictures, get secure_url, replace local paths)
-6. Keyboard shortcuts: Tab through bulk edit fields, Enter to save, Shift+Enter to next row
-7. Production deploy: follow docs/deployment/vercel.md — set env vars, run prisma db push against production DB, verify /api/health returns ok
+1. **Deploy to Vercel**: follow docs/deployment/vercel.md — create Neon DB, set all env vars, run prisma db push against production DB, verify /api/health returns ok
+2. **Live OAuth validation**: connect real ML sandbox credentials → verify DB row → test dry-run → test preflight → verify disconnect clears DB row
+3. **Image hosting**: for real ML publishing, upload images to an external CDN (Cloudinary/Imgur/S3) and use their HTTPS URLs in products; OR set IMAGE_PUBLIC_BASE_URL to production domain
+4. **First controlled real publish**: use /settings/production-readiness to verify all checks pass, then publish ONE item via the Safe First Publish flow; verify it appears in ML seller dashboard; delete if test
+5. Add additional categories: mobile phones, mattresses (follow pattern in `src/config/categories/appliances.ts`)
+6. Persist bulk CSV results to `BulkUpload` DB table for history/audit
+7. For real ML publishing with uploaded images (Vercel): add ML CDN image upload step before publish (POST /pictures, get secure_url, replace local paths)
 
 ## WARNINGS — Read Before Enabling Real Publishing
 - `MERCADOLIBRE_DRY_RUN` defaults to `true` — no real publish without explicit opt-in

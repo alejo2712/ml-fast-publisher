@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   CheckCircle2, XCircle, AlertTriangle, AlertCircle,
   RefreshCw, Loader2, Activity, Database, ShieldCheck,
-  Zap, ImageIcon, Server, Info,
+  Zap, ImageIcon, Server, Info, HardDrive, Globe,
 } from 'lucide-react';
 import { cn } from '@/components/ui';
 
@@ -28,17 +28,20 @@ interface DiagnosticsResult {
   status: CheckStatus;
   timestamp: string;
   version: string;
+  environment: 'local' | 'preview' | 'production';
   env: SubsystemDiagnostic;
   database: SubsystemDiagnostic;
   auth: SubsystemDiagnostic;
   mercadolibre: SubsystemDiagnostic;
   imageHosting: SubsystemDiagnostic;
+  uploads: SubsystemDiagnostic;
 }
 
 interface HealthResponse {
   status: CheckStatus;
   timestamp: string;
   version: string;
+  environment: 'local' | 'preview' | 'production';
   warnings: string[];
   details: DiagnosticsResult;
 }
@@ -233,9 +236,17 @@ export function SystemSettings() {
                 </p>
               )}
             </div>
-            <div className="flex items-center gap-2 shrink-0 text-xs text-gray-500">
-              <Server size={12} />
-              v{health.version}
+            <div className="flex items-center gap-3 shrink-0 text-xs text-gray-500">
+              <span className={cn(
+                'px-2 py-0.5 rounded-full font-semibold text-xs',
+                health.environment === 'production' ? 'bg-indigo-100 text-indigo-700' :
+                health.environment === 'preview' ? 'bg-amber-100 text-amber-700' :
+                'bg-gray-100 text-gray-600'
+              )}>
+                {health.environment === 'production' ? 'Producción' :
+                 health.environment === 'preview' ? 'Preview' : 'Local'}
+              </span>
+              <span className="flex items-center gap-1"><Server size={12} />v{health.version}</span>
             </div>
           </div>
 
@@ -283,16 +294,26 @@ export function SystemSettings() {
               icon={ImageIcon}
               subsystem={health.details.imageHosting}
             />
+            <SubsystemCard
+              title="Almacenamiento de uploads"
+              icon={HardDrive}
+              subsystem={health.details.uploads}
+            />
           </div>
 
           {/* Build info */}
-          <div className="flex items-center gap-4 text-xs text-gray-400 pt-1 border-t border-gray-100">
+          <div className="flex items-center gap-4 text-xs text-gray-400 pt-1 border-t border-gray-100 flex-wrap">
             <span>v{health.version}</span>
             <span>·</span>
             <span>{new Date(health.timestamp).toLocaleString('es-AR')}</span>
             <span>·</span>
             <a href="/api/health" target="_blank" rel="noreferrer" className="hover:text-indigo-500 transition-colors">
               /api/health ↗
+            </a>
+            <span>·</span>
+            <a href="/settings/production-readiness" className="hover:text-indigo-500 transition-colors flex items-center gap-1">
+              <Globe size={10} />
+              Checklist de producción
             </a>
           </div>
         </>

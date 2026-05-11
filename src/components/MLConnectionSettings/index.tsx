@@ -144,13 +144,21 @@ export function MLConnectionSettings() {
   const [readinessResult, setReadinessResult] = useState<PreflightResult | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
   const [showDisconnectModal, setShowDisconnectModal] = useState(false);
+  const [environment, setEnvironment] = useState<'local' | 'preview' | 'production' | null>(null);
 
   const fetchStatus = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/ml/status');
-      const data = await res.json();
-      setStatus(data as MLStatus);
+      const [mlRes, healthRes] = await Promise.all([
+        fetch('/api/ml/status'),
+        fetch('/api/health'),
+      ]);
+      const mlData = await mlRes.json();
+      setStatus(mlData as MLStatus);
+      if (healthRes.ok) {
+        const healthData = await healthRes.json();
+        setEnvironment(healthData.environment ?? null);
+      }
     } catch {
       toast('No se pudo cargar el estado de ML', 'error');
     } finally {
@@ -277,7 +285,19 @@ export function MLConnectionSettings() {
             <Zap size={18} className="text-amber-600" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Mercado Libre</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold text-gray-900">Mercado Libre</h1>
+              {environment && (
+                <span className={cn(
+                  'text-xs font-semibold px-2 py-0.5 rounded-full',
+                  environment === 'production' ? 'bg-indigo-100 text-indigo-700' :
+                  environment === 'preview' ? 'bg-amber-100 text-amber-700' :
+                  'bg-gray-100 text-gray-600'
+                )}>
+                  {environment === 'production' ? 'Producción' : environment === 'preview' ? 'Preview' : 'Local'}
+                </span>
+              )}
+            </div>
             <p className="text-sm text-gray-500 mt-0.5">Configuración de OAuth y publicación</p>
           </div>
         </div>

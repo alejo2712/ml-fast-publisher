@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import {
   Send, AlertTriangle, CheckCircle2, Loader2, ShieldAlert, FlaskConical,
-  X, ImageIcon, ShieldCheck, AlertCircle, Info,
+  X, ImageIcon, ShieldCheck, AlertCircle, Info, ShieldOff,
 } from 'lucide-react';
 import { cn } from '@/components/ui';
 import type { MLPayload } from '@/types';
@@ -93,6 +93,15 @@ function PreflightPanel({ preflight, loading }: { preflight: PreflightResult | n
   );
 }
 
+// ── Safe First Publish confirmations ─────────────────────────────────────────
+
+const SAFE_PUBLISH_CONFIRMATIONS = [
+  'El preflight pasó sin errores bloqueantes.',
+  'Las imágenes son URLs HTTPS públicas, accesibles por Mercado Libre.',
+  'Entiendo que este ítem quedará publicado de forma real en Mercado Libre y deberé borrarlo manualmente si fue un test.',
+  'Verifiqué el título, precio, categoría y condición del producto.',
+] as const;
+
 function ConfirmModal({
   payload,
   mlStatus,
@@ -108,7 +117,9 @@ function ConfirmModal({
   onCancel: () => void;
   isPublishing: boolean;
 }) {
-  const [realPublishConfirmed, setRealPublishConfirmed] = useState(false);
+  const [confirmations, setConfirmations] = useState<boolean[]>(
+    SAFE_PUBLISH_CONFIRMATIONS.map(() => false)
+  );
   const [preflight, setPreflight] = useState<PreflightResult | null>(null);
   const [preflightLoading, setPreflightLoading] = useState(false);
 
@@ -125,18 +136,24 @@ function ConfirmModal({
     })
       .then(r => r.json())
       .then(data => setPreflight(data as PreflightResult))
-      .catch(() => { /* silent — will show generic fallback */ })
+      .catch(() => { /* silent */ })
       .finally(() => setPreflightLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const preflightBlocking = !mlStatus.dryRun && preflight !== null && !preflight.ready;
+  const allConfirmed = confirmations.every(Boolean);
+
   const confirmDisabled =
     isPublishing ||
     blockedByImages ||
     preflightLoading ||
     preflightBlocking ||
-    (!mlStatus.dryRun && !realPublishConfirmed);
+    (!mlStatus.dryRun && !allConfirmed);
+
+  const toggleConfirmation = (i: number) => {
+    setConfirmations(prev => prev.map((v, idx) => idx === i ? !v : v));
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
@@ -160,6 +177,20 @@ function ConfirmModal({
               <p className="text-blue-600 text-xs mt-0.5">
                 No se publicará nada real. Para publicar de verdad configurá{' '}
                 <code className="bg-blue-100 px-1 rounded">MERCADOLIBRE_DRY_RUN=false</code>.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Real mode header warning */}
+        {!mlStatus.dryRun && (
+          <div className="flex items-start gap-3 bg-red-50 border-2 border-red-300 rounded-xl p-3 text-sm">
+            <ShieldOff size={16} className="text-red-600 mt-0.5 shrink-0" />
+            <div>
+              <p className="font-bold text-red-700">PUBLICACIÓN REAL</p>
+              <p className="text-red-600 text-xs mt-0.5">
+                Este ítem se publicará en Mercado Libre. No hay deshacer automático.
+                Confirmá cada punto antes de continuar.
               </p>
             </div>
           </div>
@@ -231,19 +262,27 @@ function ConfirmModal({
           </p>
         </div>
 
-        {/* Real-publish confirmation checkbox */}
+        {/* Safe First Publish — multi-step confirmations (real mode only) */}
         {!mlStatus.dryRun && !blockedByImages && (
-          <label className="flex items-start gap-2.5 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={realPublishConfirmed}
-              onChange={(e) => setRealPublishConfirmed(e.target.checked)}
-              className="mt-0.5 rounded border-gray-300 text-indigo-600 cursor-pointer"
-            />
-            <span className="text-xs text-gray-700 leading-snug">
-              Entiendo que esto publicará artículos <strong>reales</strong> en Mercado Libre y que no se puede deshacer automáticamente.
-            </span>
-          </label>
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Confirmaciones requeridas</p>
+            {SAFE_PUBLISH_CONFIRMATIONS.map((text, i) => (
+              <label key={i} className="flex items-start gap-2.5 cursor-pointer select-none group">
+                <input
+                  type="checkbox"
+                  checked={confirmations[i]}
+                  onChange={() => toggleConfirmation(i)}
+                  className="mt-0.5 rounded border-gray-300 text-red-600 cursor-pointer"
+                />
+                <span className={cn(
+                  'text-xs leading-snug transition-colors',
+                  confirmations[i] ? 'text-gray-500 line-through' : 'text-gray-700'
+                )}>
+                  {text}
+                </span>
+              </label>
+            ))}
+          </div>
         )}
 
         <div className="flex gap-3">
@@ -260,15 +299,15 @@ function ConfirmModal({
             title={
               preflightBlocking
                 ? `Preflight falló: ${preflight?.blockingCount} problema(s) bloqueante(s)`
-                : !realPublishConfirmed && !mlStatus.dryRun
-                ? 'Marcá el checkbox para confirmar'
+                : !allConfirmed && !mlStatus.dryRun
+                ? 'Confirmá todos los puntos para continuar'
                 : undefined
             }
             className={cn(
               'flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all',
               mlStatus.dryRun
                 ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                : 'bg-indigo-600 hover:bg-indigo-700 text-white',
+                : 'bg-red-600 hover:bg-red-700 text-white',
               'disabled:opacity-50 disabled:cursor-not-allowed'
             )}
           >
@@ -277,7 +316,7 @@ function ConfirmModal({
             ) : mlStatus.dryRun ? (
               <><FlaskConical size={15} /> Simular publicación</>
             ) : (
-              <><Send size={15} /> Publicar ahora</>
+              <><Send size={15} /> Publicar en Mercado Libre</>
             )}
           </button>
         </div>
