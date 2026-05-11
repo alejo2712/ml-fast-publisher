@@ -152,9 +152,45 @@
 
 ---
 
+---
+
+## 12. Template usage ("Usar plantilla")
+
+| # | Steps | Expected |
+|---|-------|----------|
+| 12.1 | Save a template from review step (set brand=Samsung, condition=new) | Toast "Plantilla guardada" |
+| 12.2 | Visit `/templates`, click "Usar plantilla" | Navigates to `/?template={id}` |
+| 12.3 | See banner "Usando plantilla: {name}" in input step | Banner visible with dismiss X |
+| 12.4 | Type "Heladera 320L" (no brand) → submit | Brand field pre-filled from template (Samsung) |
+| 12.5 | Type "Heladera LG 320L" → submit | Brand = LG (inference wins over template) |
+| 12.6 | Dismiss template (click X) → submit product | Template data not applied |
+| 12.7 | Check review step header | Shows "Plantilla: {name}" badge |
+| 12.8 | After form submit, check `/templates` | useCount incremented by 1 |
+
+---
+
+## 13. Image upload
+
+| # | Steps | Expected |
+|---|-------|----------|
+| 13.1 | Go to review step → see "Fotos del producto" section | Upload zone with drag-drop visible |
+| 13.2 | Drag a JPG/PNG file onto the drop zone | File uploads, thumbnail appears |
+| 13.3 | Click upload zone → select 2 files | Both upload, thumbnails grid shows 2 images |
+| 13.4 | Hover over thumbnail → click "Principal" on second image | First image changes, reordered to front |
+| 13.5 | Hover thumbnail → click remove (X) | Image removed from list |
+| 13.6 | Try uploading a file > 5MB | Toast error "El archivo es demasiado grande" |
+| 13.7 | Try uploading a non-image file | Toast error "Tipo de archivo no permitido" |
+| 13.8 | Click "Agregar por URL" → enter https://... | Image added to list |
+| 13.9 | Upload image → check validation tab | "Requerida" badge disappears from images field |
+| 13.10 | Publish dry-run with local uploaded image | Succeeds, history entry records local path |
+| 13.11 | Local image in JSON preview | `pictures: [{ "source": "/uploads/..." }]` — amber warning note visible |
+
+---
+
 ## Known limitations (not bugs)
 
 - ML OAuth tokens are also cached in-memory — cleared on server restart, but DB fallback restores them on next request to `/api/ml/status` or publish.
 - ML category IDs (`MLA1577`, etc.) are estimates — must be verified via ML API before going live.
 - Token refresh is triggered by publish requests — no background refresh job.
 - ML description must not contain phone numbers or emails (enforced client and server side).
+- Local uploaded images (`/uploads/...`) cannot be used for real ML publishing — ML API requires publicly accessible HTTPS URLs. Dry-run mode works fine. For production, add CDN upload step before publish.

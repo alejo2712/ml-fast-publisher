@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Sparkles, ArrowRight, Lightbulb } from 'lucide-react';
+import { Sparkles, ArrowRight, Lightbulb, BookTemplate, X } from 'lucide-react';
 import { cn } from '@/components/ui';
 
 const EXAMPLES = [
@@ -15,9 +15,11 @@ const EXAMPLES = [
 interface InputStepProps {
   onSubmit: (input: string) => void;
   isLoading: boolean;
+  templateName?: string | null;
+  onClearTemplate?: () => void;
 }
 
-export function InputStep({ onSubmit, isLoading }: InputStepProps) {
+export function InputStep({ onSubmit, isLoading, templateName, onClearTemplate }: InputStepProps) {
   const [input, setInput] = useState('');
 
   function handleSubmit(e: React.FormEvent) {
@@ -43,6 +45,26 @@ export function InputStep({ onSubmit, isLoading }: InputStepProps) {
           Describí tu producto y listo. Nosotros hacemos el resto.
         </p>
       </div>
+
+      {/* Template banner */}
+      {templateName && (
+        <div className="w-full flex items-center gap-3 bg-violet-50 border border-violet-200 rounded-xl px-4 py-3">
+          <BookTemplate size={16} className="text-violet-500 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-violet-800">Usando plantilla</p>
+            <p className="text-xs text-violet-600 truncate">{templateName}</p>
+          </div>
+          {onClearTemplate && (
+            <button
+              onClick={onClearTemplate}
+              title="Quitar plantilla"
+              className="text-violet-400 hover:text-violet-700 transition-colors p-1"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="w-full space-y-4">
         <div className="relative">
@@ -85,7 +107,7 @@ export function InputStep({ onSubmit, isLoading }: InputStepProps) {
           ) : (
             <>
               <Sparkles size={18} />
-              Analizar producto
+              {templateName ? 'Analizar con plantilla' : 'Analizar producto'}
               <ArrowRight size={16} />
             </>
           )}

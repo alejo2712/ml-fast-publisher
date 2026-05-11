@@ -119,6 +119,8 @@ export function buildMLPayload(draft: ProductDraft): MLPayload {
     listing_type_id: draft.listingType,
     condition: draft.condition ?? 'new',
     description: { plain_text: description },
+    // Local images (/uploads/...) are included as-is — valid for dry-run and dev.
+    // For real ML publishing, images must be uploaded to a public CDN first.
     pictures: draft.images.map((url) => ({ source: url })),
     attributes,
     shipping: {

@@ -151,7 +151,7 @@ export default function TemplatesPage() {
 
                 <div className="flex items-center gap-2 pt-1">
                   <Link
-                    href="/"
+                    href={`/?template=${t.id}`}
                     className="flex items-center gap-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-800 border border-indigo-200 hover:border-indigo-400 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition-all"
                   >
                     <Zap size={12} /> Usar plantilla

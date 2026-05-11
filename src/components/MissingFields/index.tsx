@@ -142,14 +142,14 @@ export function MissingFields({ validation, draft, onChange }: MissingFieldsProp
     <div className="space-y-5">
       <StatusBanner validation={validation} />
 
-      {/* Fields with invalid values (have a value but it's wrong) */}
-      {fieldErrors.length > 0 && (
+      {/* Fields with invalid values — images handled by ImageUploader */}
+      {fieldErrors.filter((e) => e.id !== 'images').length > 0 && (
         <div className="space-y-3">
           <p className="text-xs font-semibold text-red-600 uppercase tracking-wide">
             Valores inválidos — corregir
           </p>
           <div className="grid gap-3">
-            {fieldErrors.map((err) => {
+            {fieldErrors.filter((e) => e.id !== 'images').map((err) => {
               // Build a minimal MissingField shape for the input renderer
               const asMissing: MissingField = {
                 id: err.id,
@@ -175,22 +175,30 @@ export function MissingFields({ validation, draft, onChange }: MissingFieldsProp
         </div>
       )}
 
-      {/* Truly missing fields */}
-      {missingFields.length > 0 && (
+      {/* Truly missing fields — images are handled by ImageUploader in the review step */}
+      {missingFields.filter((f) => f.id !== 'images').length > 0 && (
         <div className="space-y-3">
           <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide">
             Campos requeridos faltantes
           </p>
           <div className="grid gap-3">
-            {missingFields.map((field) => (
-              <FieldInput
-                key={field.id}
-                field={field}
-                currentValue={getCurrentValue(field.id)}
-                onChange={onChange}
-              />
-            ))}
+            {missingFields
+              .filter((f) => f.id !== 'images')
+              .map((field) => (
+                <FieldInput
+                  key={field.id}
+                  field={field}
+                  currentValue={getCurrentValue(field.id)}
+                  onChange={onChange}
+                />
+              ))}
           </div>
+        </div>
+      )}
+      {/* Images are handled by the dedicated ImageUploader section below the tabs */}
+      {missingFields.some((f) => f.id === 'images') && (
+        <div className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          Agregá al menos una foto en la sección <strong>Fotos del producto</strong> que está debajo.
         </div>
       )}
 

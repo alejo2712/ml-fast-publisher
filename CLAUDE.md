@@ -119,6 +119,26 @@ All routes in `src/app/api/` — server-side only, no ML credentials in client.
 - Skip-invalid-rows option filters errors before displaying
 - Row validation errors shown in EditPanel after each change
 
+### Template Usage ("Usar plantilla")
+- "Usar plantilla" links to `/?template={id}` (no useCount increment on click)
+- `AssistedPublisher` reads `?template` via `useSearchParams`, fetches `GET /api/templates/{id}`
+- Banner shown in InputStep with template name + dismiss button
+- On form submit: inference → `applyTemplateFallback` (fills blanks inference didn't detect) → `applyPreferences`
+- Merge priority: **inference > template > preferences**
+- Template fields: brand, model, condition, warranty, listingType, shipping, voltage, color
+- Title and price are NOT in templates — user must provide via text description
+- useCount incremented via `POST /api/templates/{id}` when user actually submits the form
+
+### Image Upload
+- API: `POST /api/uploads` — multipart form, validates type (JPG/PNG/WebP/GIF), max 5 MB
+- Files saved to `public/uploads/{userId}/{uuid}.{ext}`, served statically by Next.js
+- Component: `src/components/ImageUploader/index.tsx` — drag-drop, click, URL input, thumbnails, remove, set-main
+- `ProductDraft.images: string[]` accepts both `https://` URLs and `/uploads/...` local paths
+- Validation accepts both — `isValidImageRef()` in `src/lib/validation/index.ts`
+- In payload builder: local images included as-is (fine for dry-run; ML real publishing needs CDN)
+- `public/uploads/` is gitignored — not committed to repo
+- **Limitation**: local `/uploads/` paths won't work for real ML publishing (server must be publicly accessible)
+
 ### Clone / Duplicate
 - Drafts: `POST /api/drafts/[id]/duplicate` → creates `(copia)` clone, returns new draft
 - History: `POST /api/history/[id]` with `{ action: 'duplicate_draft' }` → creates new IN_PROGRESS draft
@@ -224,15 +244,20 @@ npm run dev
 - [x] Bug fix: /api/ml/publish refreshes expired tokens before publishing, updates DB
 - [x] Bug fix: /api/history POST validates status field against PublishStatus enum
 - [x] Manual test plan: docs/testing/manual-test-plan.md (11 test groups, 50+ scenarios)
+- [x] "Usar plantilla" wired: /?template={id} → loads template → merges with inference (inference wins)
+- [x] Image upload: POST /api/uploads, drag-drop UI, thumbnails, remove, set-main, URL input
+- [x] Validation accepts /uploads/ local paths + https:// URLs
+- [x] Payload builder documents local image limitation (needs CDN for real ML publishing)
+- [x] Build passing (26 routes, 0 TypeScript errors)
 
 ## Next Session Instructions
-1. Apply template data when user clicks "Usar plantilla" (navigate to / with template pre-applied via URL params or sessionStorage)
-2. Add real ML OAuth test with sandbox credentials — verify callback → DB persist → publish flow end-to-end
-3. Add additional categories: mobile phones, mattresses (follow pattern in `src/config/categories/appliances.ts`)
-4. Persist bulk CSV results to `BulkUpload` DB table for history/audit
-5. Add Claude/OpenAI integration to replace deterministic inference (`src/lib/inference/index.ts` — swap adapter)
-6. Keyboard shortcuts: Tab through bulk edit fields, Enter to save, Shift+Enter to next row
-7. Run `npx prisma migrate dev` against a real DB and verify all migrations apply cleanly
+1. Add real ML OAuth test with sandbox credentials — verify callback → DB persist → publish flow end-to-end
+2. Add additional categories: mobile phones, mattresses (follow pattern in `src/config/categories/appliances.ts`)
+3. Persist bulk CSV results to `BulkUpload` DB table for history/audit
+4. Add Claude/OpenAI integration to replace deterministic inference (`src/lib/inference/index.ts` — swap adapter)
+5. Keyboard shortcuts: Tab through bulk edit fields, Enter to save, Shift+Enter to next row
+6. Run `npx prisma migrate dev` against a real DB and verify all migrations apply cleanly
+7. For real ML publishing with uploaded images: add ML CDN image upload step before publish (POST /pictures, get secure_url, replace local paths)
 
 ## WARNINGS — Read Before Enabling Real Publishing
 - `MERCADOLIBRE_DRY_RUN` defaults to `true` — no real publish without explicit opt-in
@@ -240,6 +265,7 @@ npm run dev
 - ML description must not contain phone numbers, emails, or WhatsApp — validation blocks common patterns
 - Rate limit: ~50 req/s — bulk publish adds 100ms delay between items
 - Prisma 7: no `url` in schema.prisma — connection URL lives in `prisma.config.ts` and `db.ts` adapter
+- Local uploaded images (`/uploads/...`) cannot be published to ML in real mode — ML API requires publicly accessible HTTPS URLs. Must upload to CDN or use ML's own image upload API first.
 
 ## Implementation Rules
 - NEVER hardcode attribute logic in UI components

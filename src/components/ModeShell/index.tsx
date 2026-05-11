@@ -1,12 +1,21 @@
 'use client';
 
-import { useState } from 'react';
-import { Sparkles, Table2 } from 'lucide-react';
+import { Suspense, useState } from 'react';
+import { Sparkles, Table2, Loader2 } from 'lucide-react';
 import { cn } from '@/components/ui';
 import { AssistedPublisher } from '@/components/AssistedPublisher';
 import { BulkUpload } from '@/components/BulkUpload';
 
 type Mode = 'single' | 'bulk';
+
+function AssistedPublisherFallback() {
+  return (
+    <div className="flex items-center justify-center py-20 gap-2 text-gray-400">
+      <Loader2 size={16} className="animate-spin" />
+      <span className="text-sm">Cargando...</span>
+    </div>
+  );
+}
 
 export function ModeShell() {
   const [mode, setMode] = useState<Mode>('single');
@@ -43,7 +52,13 @@ export function ModeShell() {
         </div>
       </div>
 
-      {mode === 'single' ? <AssistedPublisher /> : <BulkUpload />}
+      {mode === 'single' ? (
+        <Suspense fallback={<AssistedPublisherFallback />}>
+          <AssistedPublisher />
+        </Suspense>
+      ) : (
+        <BulkUpload />
+      )}
     </div>
   );
 }

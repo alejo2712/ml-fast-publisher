@@ -15,9 +15,16 @@ function isGarbage(value: string): boolean {
   return GARBAGE_PATTERNS.some((p) => p.test(v));
 }
 
-function isValidUrl(value: string): boolean {
+/**
+ * Accepts:
+ * - https:// and http:// URLs (external images)
+ * - /uploads/... paths (locally uploaded images, served from public/)
+ */
+function isValidImageRef(value: string): boolean {
+  const v = value.trim();
+  if (v.startsWith('/uploads/')) return true;
   try {
-    const url = new URL(value.trim());
+    const url = new URL(v);
     return url.protocol === 'http:' || url.protocol === 'https:';
   } catch {
     return false;
@@ -104,9 +111,9 @@ export function validateDraft(draft: ProductDraft): ValidationResult {
   if (draft.images.length === 0) {
     missingFields.push({ id: 'images', label: 'Fotos del producto', required: true, type: 'text', placeholder: 'URL de imagen (https://...)' });
   } else {
-    const badUrls = draft.images.filter((url) => !isValidUrl(url));
-    if (badUrls.length > 0) {
-      fieldErrors.push({ id: 'images', label: 'Fotos', message: `URL inválida: ${badUrls[0]}. Debe empezar con https://` });
+    const badRefs = draft.images.filter((url) => !isValidImageRef(url));
+    if (badRefs.length > 0) {
+      fieldErrors.push({ id: 'images', label: 'Fotos', message: `Referencia de imagen inválida: ${badRefs[0]}` });
     }
   }
 

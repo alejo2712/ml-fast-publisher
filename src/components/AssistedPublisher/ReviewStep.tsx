@@ -2,13 +2,14 @@
 
 import type { InferenceResult, MLPayload, ProductDraft } from '@/types';
 import type { ValidationResult } from '@/lib/validation';
-import { ArrowLeft, RefreshCw, BookTemplate } from 'lucide-react';
+import { ArrowLeft, RefreshCw, BookTemplate, ImageIcon } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/components/ui';
 import { ProductPreview } from '@/components/ProductPreview';
 import { MissingFields } from '@/components/MissingFields';
 import { JsonPreview } from '@/components/JsonPreview';
 import { PublishButton } from '@/components/PublishButton';
+import { ImageUploader } from '@/components/ImageUploader';
 import { SaveTemplateModal } from './SaveTemplateModal';
 
 type Tab = 'preview' | 'missing' | 'json';
@@ -19,8 +20,10 @@ interface ReviewStepProps {
   payload: MLPayload;
   validation: ValidationResult;
   draftId: string | null;
+  templateName?: string | null;
   onBack: () => void;
   onFieldChange: (id: string, value: string | number) => void;
+  onImagesChange: (images: string[]) => void;
 }
 
 export function ReviewStep({
@@ -28,8 +31,10 @@ export function ReviewStep({
   draft,
   payload,
   validation,
+  templateName,
   onBack,
   onFieldChange,
+  onImagesChange,
 }: ReviewStepProps) {
   const [activeTab, setActiveTab] = useState<Tab>('preview');
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
@@ -42,7 +47,11 @@ export function ReviewStep({
       id: 'missing',
       label: 'Validación',
       badge: validation.isReady ? '✓' : String(problemCount),
-      badgeColor: validation.isReady ? 'bg-emerald-100 text-emerald-700' : validation.status === 'invalid' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700',
+      badgeColor: validation.isReady
+        ? 'bg-emerald-100 text-emerald-700'
+        : validation.status === 'invalid'
+        ? 'bg-red-100 text-red-700'
+        : 'bg-amber-100 text-amber-700',
     },
     { id: 'json', label: 'JSON (ML)' },
   ];
@@ -67,6 +76,11 @@ export function ReviewStep({
         </div>
 
         <div className="flex items-center gap-2">
+          {templateName && (
+            <span className="text-xs bg-violet-50 text-violet-600 border border-violet-200 px-2.5 py-1 rounded-full font-medium">
+              Plantilla: {templateName}
+            </span>
+          )}
           <button
             onClick={() => setShowSaveTemplate(true)}
             className="flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-800 border border-indigo-200 hover:border-indigo-400 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition-all font-medium"
@@ -110,6 +124,25 @@ export function ReviewStep({
         {activeTab === 'json' && (
           <JsonPreview payload={payload} />
         )}
+      </div>
+
+      {/* Images — always visible, not tab-gated */}
+      <div className="bg-white rounded-xl border border-gray-100 p-5 space-y-3">
+        <div className="flex items-center gap-2">
+          <ImageIcon size={15} className="text-gray-400" />
+          <span className="text-sm font-semibold text-gray-700">Fotos del producto</span>
+          {validation.missingFields.some((f) => f.id === 'images') && (
+            <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">
+              Requerida
+            </span>
+          )}
+          {validation.fieldErrors.some((f) => f.id === 'images') && (
+            <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">
+              Inválida
+            </span>
+          )}
+        </div>
+        <ImageUploader images={draft.images} onChange={onImagesChange} />
       </div>
 
       {showSaveTemplate && (

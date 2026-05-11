@@ -4,6 +4,20 @@ import { requireAuth } from '@/lib/auth-guard';
 
 type Params = { params: Promise<{ id: string }> };
 
+/** GET /api/templates/[id] — fetch a single template (does NOT increment useCount) */
+export async function GET(_: NextRequest, { params }: Params) {
+  try {
+    const { userId } = await requireAuth();
+    const { id } = await params;
+    const template = await prisma.productTemplate.findFirst({ where: { id, userId } });
+    if (!template) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    return NextResponse.json(template);
+  } catch (e) {
+    if (e instanceof Response) return e;
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+  }
+}
+
 export async function DELETE(_: NextRequest, { params }: Params) {
   try {
     const { userId } = await requireAuth();
