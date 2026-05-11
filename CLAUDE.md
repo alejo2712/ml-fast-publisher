@@ -383,14 +383,29 @@ npm run dev
 - [x] BulkUpload: accepts .xlsx/.xls + .csv; drag-drop fixed with onDragEnter; Excel download button; UX copy improved for non-technical users; hint column in reference table
 - [x] Build passing (31 routes, 0 TypeScript errors)
 
+### Session 12 additions (bulk import QA + bug fixes)
+- [x] Bug fix: tipo_producto column was parsed but never applied — now builds PRODUCT_TYPE_MAP and overrides inference.applianceType before buildProductDraft
+- [x] Bug fix: parser row status was 'ok' for rows with garbage field values (fieldErrors); now uses validateDraft() to capture both arrays; fieldErrors → status=error
+- [x] Bug fix: images column only split on | — now also supports ; (semicolon) and quoted , (comma) as separators
+- [x] Bug fix: CSV template hint/example rows caused false parse errors when template was re-uploaded; rows now prefixed with '# ' and parser skips '#'-prefixed lines
+- [x] Bug fix: CSV template now includes UTF-8 BOM for correct encoding in Excel on Windows
+- [x] Bug fix: Excel template no longer has hint/example rows in Productos sheet — only header row; re-uploading template produces 0 data rows
+- [x] Bug fix: isGarbage() fired on numeric attribute values like capacity '320' (matched ^[\d\W]+$); now only runs on attr.type === 'text' attributes
+- [x] 71 automated parser tests — scripts/test-bulk-parser.ts (npx tsx); covers conditions, separators, tipo_producto, legacy headers, dedup, XLSX roundtrip, edge cases
+- [x] 4 test fixtures in tests/fixtures/ (valid, invalid, mixed, legacy-headers)
+- [x] npm script 'test:bulk' added to package.json
+- [x] docs/testing/manual-test-plan.md: section 20 (bulk import) — 9 groups, 40+ scenarios
+- [x] Build passing (31 routes, 0 TypeScript errors, 71/71 parser tests)
+
 ## Next Session Instructions
 1. **Deploy to Vercel**: follow docs/deployment/vercel.md — create Neon DB, set all env vars, run prisma db push against production DB, verify /api/health returns ok
 2. **Live OAuth validation**: connect real ML sandbox credentials → verify DB row → test dry-run → test preflight → verify disconnect clears DB row
 3. **Image hosting**: for real ML publishing, upload images to an external CDN (Cloudinary/Imgur/S3) and use their HTTPS URLs in products; OR set IMAGE_PUBLIC_BASE_URL to production domain
 4. **First controlled real publish**: use /settings/production-readiness to verify all checks pass, then publish ONE item via the Safe First Publish flow; verify it appears in ML seller dashboard; delete if test
-5. Add additional categories: mobile phones, mattresses (follow pattern in `src/config/categories/appliances.ts`)
-6. Persist bulk CSV results to `BulkUpload` DB table for history/audit
-7. For real ML publishing with uploaded images (Vercel): add ML CDN image upload step before publish (POST /pictures, get secure_url, replace local paths)
+5. **Run manual test plan section 20** to verify bulk import end-to-end in the browser before declaring it production-ready
+6. Add additional categories: mobile phones, mattresses (follow pattern in `src/config/categories/appliances.ts`)
+7. Persist bulk CSV results to `BulkUpload` DB table for history/audit
+8. For real ML publishing with uploaded images (Vercel): add ML CDN image upload step before publish (POST /pictures, get secure_url, replace local paths)
 
 ## WARNINGS — Read Before Enabling Real Publishing
 - `MERCADOLIBRE_DRY_RUN` defaults to `true` — no real publish without explicit opt-in
