@@ -2,13 +2,14 @@
 
 import type { InferenceResult, MLPayload, ProductDraft } from '@/types';
 import type { ValidationResult } from '@/lib/validation';
-import { ArrowLeft, RefreshCw } from 'lucide-react';
+import { ArrowLeft, RefreshCw, BookTemplate } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/components/ui';
 import { ProductPreview } from '@/components/ProductPreview';
 import { MissingFields } from '@/components/MissingFields';
 import { JsonPreview } from '@/components/JsonPreview';
 import { PublishButton } from '@/components/PublishButton';
+import { SaveTemplateModal } from './SaveTemplateModal';
 
 type Tab = 'preview' | 'missing' | 'json';
 
@@ -17,6 +18,7 @@ interface ReviewStepProps {
   draft: ProductDraft;
   payload: MLPayload;
   validation: ValidationResult;
+  draftId: string | null;
   onBack: () => void;
   onFieldChange: (id: string, value: string | number) => void;
 }
@@ -30,6 +32,7 @@ export function ReviewStep({
   onFieldChange,
 }: ReviewStepProps) {
   const [activeTab, setActiveTab] = useState<Tab>('preview');
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false);
 
   const problemCount = validation.missingFields.length + validation.fieldErrors.length;
 
@@ -63,8 +66,16 @@ export function ReviewStep({
           </div>
         </div>
 
-        {/* Publish button — always visible in header, disabled when not ready */}
-        <PublishButton payload={payload} isReady={validation.isReady} />
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowSaveTemplate(true)}
+            className="flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-800 border border-indigo-200 hover:border-indigo-400 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition-all font-medium"
+          >
+            <BookTemplate size={13} />
+            Guardar plantilla
+          </button>
+          <PublishButton payload={payload} isReady={validation.isReady} />
+        </div>
       </div>
 
       {/* Tabs */}
@@ -100,6 +111,10 @@ export function ReviewStep({
           <JsonPreview payload={payload} />
         )}
       </div>
+
+      {showSaveTemplate && (
+        <SaveTemplateModal draft={draft} onClose={() => setShowSaveTemplate(false)} />
+      )}
     </div>
   );
 }

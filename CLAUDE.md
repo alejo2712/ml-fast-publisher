@@ -102,12 +102,52 @@ All routes in `src/app/api/` — server-side only, no ML credentials in client.
 - `MERCADOLIBRE_DRY_RUN=true` (default) blocks all real API calls — must explicitly set to "false"
 - ML tokens stored in `MercadoLibreAccount` DB table (persisted across restarts)
 
+### Seller Preferences
+- Model: `SellerPreferences` (one per user, upserted on first access)
+- Fields: `defaultCurrency`, `defaultShipping`, `defaultWarranty`, `localPickUp`, `defaultCondition`, `defaultListingType`
+- API: `GET/PUT /api/preferences` — server-side upsert, returns current prefs
+- Applied in `AssistedPublisher` on draft creation via `applyPreferences(draft, prefs)`
+- Settings UI: `/settings` page with `SettingsForm` component
+
+### Bulk Inline Editing
+- `BulkUpload` holds mutable `rows: CsvRowResult[]` state (not `CsvParseResult`)
+- `handleRowEdit(rowIndex, changes)` — applies field changes, rebuilds `buildMLPayload` + `validateDraft` in-memory
+- `BulkResults` receives `onRowEdit` callback; shows an "Editar" toggle per row
+- `EditPanel` — 6 editable fields: title, price, stock, condition, brand, model
+- `EditCell` — click-to-edit inline inputs; Enter to commit, Escape to cancel
+- Row status badge updates in real-time after edits (ok/warnings/error)
+- Skip-invalid-rows option filters errors before displaying
+- Row validation errors shown in EditPanel after each change
+
+### Clone / Duplicate
+- Drafts: `POST /api/drafts/[id]/duplicate` → creates `(copia)` clone, returns new draft
+- History: `POST /api/history/[id]` with `{ action: 'duplicate_draft' }` → creates new IN_PROGRESS draft
+- Templates: `POST /api/templates/[id]/duplicate` → clones with `(copia)` suffix
+
+### Retry Failed Publishes
+- `POST /api/history/[id]` with `{ action: 'retry' }` → re-posts saved payload to `/api/ml/publish`
+- Button shown only for FAILED entries in history table
+- Result toasted to user
+
+### Template Favorites
+- `isFavorite Boolean` field on `ProductTemplate`
+- `POST /api/templates/[id]/favorite` → toggles, returns new boolean
+- Templates page sorts favorites first, shows star icon toggle
+- `SaveTemplateModal` in ReviewStep → saves brand, condition, listing type, shipping, warranty (not price/title)
+
+### History UX
+- `HistoryTable` client component: local filter by status, text search (title/type/mlItemId)
+- Actions per row: Retry (FAILED only), Duplicate as draft, View on ML
+- Status counts shown in filter tabs
+- Up to 500 entries loaded server-side, filtered client-side
+
 ### CSV Bulk Mode
 - CSV column definitions live in `src/lib/csv/template.ts` — single source of truth
 - To add a CSV column: add one entry to `CSV_COLUMNS` in `template.ts` — parser picks it up automatically
 - Parser: `src/lib/csv/parser.ts` — `parseCsvText(text)` returns `CsvParseResult` with per-row status
 - Each row runs `inferProduct` → `buildProductDraft` → `buildMLPayload` → `getMissingFields`
 - Export: `exportAllPayloads(rows)` dumps all valid rows as a JSON array
+- Skip-invalid option: filters error rows before displaying results
 
 ---
 
@@ -167,16 +207,26 @@ npm run dev
 - [x] Autosave hook wired into AssistedPublisher (debounced, "Guardado" indicator)
 - [x] Publish history persisted to DB
 - [x] .env.example with all required variables (DATABASE_URL, AUTH_SECRET, ML vars)
-- [x] Build passing (18 routes, 0 TypeScript errors)
+- [x] SellerPreferences model + /settings page — defaults applied to every new product
+- [x] Inline bulk editing: 6 fields (title, price, stock, condition, brand, model) per row
+- [x] Skip-invalid-rows option in CSV import
+- [x] Draft duplicate: POST /api/drafts/[id]/duplicate, button in drafts page
+- [x] History improvements: search, status filter, retry failed, duplicate as draft
+- [x] Template improvements: favorite toggle (star), duplicate, sorted favorites-first
+- [x] Save as template modal in single-product review step
+- [x] Autosave: dirty/saving/saved/error states + save timestamp display
+- [x] Preferences applied to new drafts (currency, condition, listing type, shipping, warranty)
+- [x] Build passing (25 routes, 0 TypeScript errors)
 
 ## Next Session Instructions
 1. Add Claude/OpenAI integration to replace deterministic inference (`src/lib/inference/index.ts` — swap adapter)
 2. Add image upload with vision-based inference
 3. Add additional categories: mobile phones, mattresses
-4. Add inline field editing in bulk results table (edit price/condition per row before publish)
-5. Add "Save as template" button in single-product review step
+4. Apply template data when user clicks "Usar plantilla" (navigate to / with template pre-applied)
+5. Persist bulk CSV results to `BulkUpload` DB table for history/audit
 6. Add real ML OAuth test with sandbox credentials
 7. Run `npx prisma migrate dev --name init` against a real DB and verify migrations
+8. Keyboard shortcuts: Tab through bulk edit fields, Enter to save, Shift+Enter to next row
 
 ## WARNINGS — Read Before Enabling Real Publishing
 - `MERCADOLIBRE_DRY_RUN` defaults to `true` — no real publish without explicit opt-in

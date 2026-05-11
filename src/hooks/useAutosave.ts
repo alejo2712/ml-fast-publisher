@@ -1,7 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import type { ProductDraft } from '@/types';
+
+export type AutosaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
 
 interface AutosaveOptions {
   draft: ProductDraft | null;
@@ -12,11 +14,17 @@ interface AutosaveOptions {
   enabled?: boolean;
 }
 
+interface AutosaveReturn {
+  savedIdRef: React.MutableRefObject<string | null>;
+  state: AutosaveState;
+  savedAt: Date | null;
+}
+
 /**
  * Debounced autosave hook.
  * - Creates the draft on first save (POST /api/drafts)
  * - Updates on subsequent saves (PATCH /api/drafts/[id])
- * Returns a ref with the current saved draft ID.
+ * - Skips write if draft content hasn't changed (shallow JSON compare)
  */
 export function useAutosave({
   draft,
@@ -24,12 +32,21 @@ export function useAutosave({
   onSaved,
   debounceMs = 1500,
   enabled = true,
-}: AutosaveOptions) {
+}: AutosaveOptions): AutosaveReturn {
   const savedIdRef = useRef<string | null>(draftId);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSavedJsonRef = useRef<string>('');
+  const [state, setState] = useState<AutosaveState>('idle');
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
 
   const save = useCallback(async (d: ProductDraft) => {
     if (!enabled) return;
+
+    // Skip write if content hasn't changed since last successful save
+    const currentJson = JSON.stringify({ title: d.title, condition: d.condition, price: d.price, stock: d.stock, brand: d.brand, model: d.model, images: d.images });
+    if (currentJson === lastSavedJsonRef.current) return;
+
+    setState('saving');
     try {
       const body = {
         title: d.title,
@@ -44,11 +61,18 @@ export function useAutosave({
       };
 
       if (savedIdRef.current) {
-        await fetch(`/api/drafts/${savedIdRef.current}`, {
+        const res = await fetch(`/api/drafts/${savedIdRef.current}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         });
+        if (res.ok) {
+          lastSavedJsonRef.current = currentJson;
+          setState('saved');
+          setSavedAt(new Date());
+        } else {
+          setState('error');
+        }
       } else {
         const res = await fetch('/api/drafts', {
           method: 'POST',
@@ -58,20 +82,27 @@ export function useAutosave({
         if (res.ok) {
           const created = await res.json();
           savedIdRef.current = created.id;
+          lastSavedJsonRef.current = currentJson;
+          setState('saved');
+          setSavedAt(new Date());
           onSaved?.(created.id);
+        } else {
+          setState('error');
         }
       }
     } catch {
-      // Autosave errors are silent — never disrupt the user flow
+      setState('error');
+      // Silent — never disrupt user flow
     }
   }, [enabled, onSaved]);
 
   useEffect(() => {
     if (!draft || !enabled) return;
+    setState('dirty');
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => save(draft), debounceMs);
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, [draft, save, debounceMs, enabled]);
 
-  return savedIdRef;
+  return { savedIdRef, state, savedAt };
 }

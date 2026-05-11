@@ -1,10 +1,13 @@
 'use client';
 
-import { useState, useRef } from 'react';
-import { Upload, ClipboardPaste, Download, FileText, Loader2 } from 'lucide-react';
+import { useState, useRef, useCallback } from 'react';
+import { Upload, ClipboardPaste, Download, FileText, Loader2, SkipForward } from 'lucide-react';
 import { cn } from '@/components/ui';
-import { parseCsvText, type CsvParseResult } from '@/lib/csv/parser';
+import { parseCsvText, type CsvRowResult } from '@/lib/csv/parser';
 import { downloadCsvTemplate, CSV_COLUMNS } from '@/lib/csv/template';
+import { buildMLPayload } from '@/lib/payload-builder';
+import { validateDraft } from '@/lib/validation';
+import type { Condition, ProductDraft } from '@/types';
 import { BulkResults } from './BulkResults';
 
 type InputTab = 'upload' | 'paste';
@@ -14,8 +17,10 @@ export function BulkUpload() {
   const [pasteText, setPasteText] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [result, setResult] = useState<CsvParseResult | null>(null);
+  const [rows, setRows] = useState<CsvRowResult[]>([]);
+  const [summary, setSummary] = useState<{ ok: number; warnings: number; errors: number } | null>(null);
   const [fileName, setFileName] = useState('');
+  const [skipInvalid, setSkipInvalid] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function processText(text: string, name = '') {
@@ -23,7 +28,13 @@ export function BulkUpload() {
     setFileName(name);
     try {
       const parsed = await parseCsvText(text);
-      setResult(parsed);
+      const displayRows = skipInvalid ? parsed.rows.filter((r) => r.status !== 'error') : parsed.rows;
+      setRows(displayRows);
+      setSummary({
+        ok: parsed.totalOk,
+        warnings: parsed.totalWarnings,
+        errors: skipInvalid ? 0 : parsed.totalErrors,
+      });
     } finally {
       setIsProcessing(false);
     }
@@ -56,27 +67,51 @@ export function BulkUpload() {
   }
 
   function reset() {
-    setResult(null);
+    setRows([]);
+    setSummary(null);
     setPasteText('');
     setFileName('');
     if (fileInputRef.current) fileInputRef.current.value = '';
   }
 
-  if (result) {
+  // Inline edit handler — updates a row's draft, rebuilds payload + validation
+  const handleRowEdit = useCallback((rowIndex: number, changes: Partial<Pick<ProductDraft, 'title' | 'price' | 'stock' | 'condition' | 'brand' | 'model'>>) => {
+    setRows((prev) => prev.map((row) => {
+      if (row.rowIndex !== rowIndex || !row.draft) return row;
+      const updatedDraft: ProductDraft = {
+        ...row.draft,
+        ...changes,
+        ...(changes.condition !== undefined ? { condition: changes.condition as Condition } : {}),
+      };
+      const payload = buildMLPayload(updatedDraft);
+      const validation = validateDraft(updatedDraft);
+      return {
+        ...row,
+        draft: updatedDraft,
+        payload,
+        missingFields: validation.missingFields,
+        errors: validation.fieldErrors.map((fe) => `${fe.label}: ${fe.message}`),
+        status: validation.isReady ? 'ok' : validation.missingFields.length > 0 ? 'warnings' : 'error',
+      };
+    }));
+  }, []);
+
+  if (rows.length > 0 && summary) {
     return (
       <div className="w-full max-w-3xl mx-auto space-y-2">
         <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">
           <FileText size={14} />
           <span>{fileName || 'archivo CSV'}</span>
           <span className="text-gray-300">·</span>
-          <span>{result.rows.length} producto{result.rows.length !== 1 ? 's' : ''} procesado{result.rows.length !== 1 ? 's' : ''}</span>
+          <span>{rows.length} producto{rows.length !== 1 ? 's' : ''} procesado{rows.length !== 1 ? 's' : ''}</span>
         </div>
         <BulkResults
-          rows={result.rows}
-          totalOk={result.totalOk}
-          totalWarnings={result.totalWarnings}
-          totalErrors={result.totalErrors}
+          rows={rows}
+          totalOk={summary.ok}
+          totalWarnings={summary.warnings}
+          totalErrors={summary.errors}
           onReset={reset}
+          onRowEdit={handleRowEdit}
         />
       </div>
     );
@@ -97,6 +132,18 @@ export function BulkUpload() {
         <Download size={14} />
         Descargar plantilla CSV de ejemplo
       </button>
+
+      {/* Options */}
+      <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={skipInvalid}
+          onChange={(e) => setSkipInvalid(e.target.checked)}
+          className="rounded border-gray-300 text-indigo-600"
+        />
+        <SkipForward size={14} className="text-gray-400" />
+        Ignorar filas inválidas automáticamente
+      </label>
 
       {/* Input tabs */}
       <div className="w-full">
@@ -155,7 +202,7 @@ export function BulkUpload() {
             <textarea
               value={pasteText}
               onChange={(e) => setPasteText(e.target.value)}
-              placeholder={`titulo,descripcion_corta,marca,precio\n"",Heladera Samsung no frost 320 litros blanca usada,Samsung,250000\n"",Lavarropas LG 8kg carga frontal nuevo,LG,180000`}
+              placeholder="titulo,descripcion_corta,marca,precio"
               rows={8}
               className={cn(
                 'w-full px-4 py-3 text-sm font-mono rounded-xl border-2 border-gray-200',

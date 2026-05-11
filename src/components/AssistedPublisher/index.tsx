@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
-import { CheckCircle2, Loader2 } from 'lucide-react';
+import { useState, useCallback, useEffect } from 'react';
+import { CheckCircle2, Loader2, AlertCircle, Clock } from 'lucide-react';
 import type { InferenceResult, MLPayload, ProductDraft } from '@/types';
 import type { ValidationResult } from '@/lib/validation';
 import { inferProduct } from '@/lib/inference';
@@ -11,9 +11,9 @@ import { useAutosave } from '@/hooks/useAutosave';
 import { useToast } from '@/components/Toast';
 import { InputStep } from './InputStep';
 import { ReviewStep } from './ReviewStep';
+import type { SellerPrefs } from '@/components/SettingsForm';
 
 type Step = 'input' | 'inferring' | 'review';
-type SaveState = 'idle' | 'saving' | 'saved';
 
 const FIELD_MAP: Record<string, keyof ProductDraft> = {
   title: 'title', brand: 'brand', model: 'model', condition: 'condition',
@@ -22,6 +22,21 @@ const FIELD_MAP: Record<string, keyof ProductDraft> = {
   type: 'technology', description: 'description', sku: 'sku',
 };
 
+function applyPreferences(draft: ProductDraft, prefs: SellerPrefs): ProductDraft {
+  return {
+    ...draft,
+    currency: (prefs.defaultCurrency as ProductDraft['currency']) || draft.currency,
+    condition: (prefs.defaultCondition as ProductDraft['condition']) || draft.condition,
+    warranty: prefs.defaultWarranty || draft.warranty,
+    listingType: (prefs.defaultListingType as ProductDraft['listingType']) || draft.listingType,
+    shipping: {
+      ...draft.shipping,
+      mode: (prefs.defaultShipping as ProductDraft['shipping']['mode']) || draft.shipping.mode,
+      localPickUp: prefs.localPickUp ?? draft.shipping.localPickUp,
+    },
+  };
+}
+
 export function AssistedPublisher() {
   const [step, setStep] = useState<Step>('input');
   const [inference, setInference] = useState<InferenceResult | null>(null);
@@ -29,31 +44,39 @@ export function AssistedPublisher() {
   const [payload, setPayload] = useState<MLPayload | null>(null);
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [draftId, setDraftId] = useState<string | null>(null);
-  const [saveState, setSaveState] = useState<SaveState>('idle');
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [prefs, setPrefs] = useState<SellerPrefs | null>(null);
   const { toast } = useToast();
 
-  function triggerSaveIndicator() {
-    setSaveState('saving');
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => setSaveState('saved'), 1800);
-  }
+  // Load seller preferences on mount
+  useEffect(() => {
+    fetch('/api/preferences')
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data) setPrefs({
+          defaultCurrency: data.defaultCurrency,
+          defaultShipping: data.defaultShipping,
+          defaultWarranty: data.defaultWarranty ?? '',
+          localPickUp: data.localPickUp,
+          defaultCondition: data.defaultCondition ?? '',
+          defaultListingType: data.defaultListingType,
+        });
+      })
+      .catch(() => {});
+  }, []);
 
-  useAutosave({
+  const { state: saveState, savedAt } = useAutosave({
     draft,
     draftId,
     enabled: step === 'review',
-    onSaved(id) {
-      setDraftId(id);
-      triggerSaveIndicator();
-    },
+    onSaved(id) { setDraftId(id); },
   });
 
   const handleInput = useCallback(async (input: string) => {
     setStep('inferring');
     try {
       const result = await inferProduct(input);
-      const newDraft = buildProductDraft(result);
+      let newDraft = buildProductDraft(result);
+      if (prefs) newDraft = applyPreferences(newDraft, prefs);
       const newPayload = buildMLPayload(newDraft);
       const newValidation = validateDraft(newDraft);
 
@@ -66,7 +89,7 @@ export function AssistedPublisher() {
       toast('Error al procesar el producto. Intentá de nuevo.', 'error');
       setStep('input');
     }
-  }, [toast]);
+  }, [toast, prefs]);
 
   const handleFieldChange = useCallback((id: string, value: string | number) => {
     if (!draft) return;
@@ -84,7 +107,6 @@ export function AssistedPublisher() {
     setDraft(updatedDraft);
     setPayload(newPayload);
     setValidation(newValidation);
-    triggerSaveIndicator();
   }, [draft]);
 
   const handleBack = useCallback(() => {
@@ -94,7 +116,6 @@ export function AssistedPublisher() {
     setPayload(null);
     setValidation(null);
     setDraftId(null);
-    setSaveState('idle');
   }, []);
 
   if (step === 'input' || step === 'inferring') {
@@ -104,13 +125,17 @@ export function AssistedPublisher() {
   if (step === 'review' && inference && draft && payload && validation) {
     return (
       <div className="w-full">
+        {/* Autosave indicator */}
         {saveState !== 'idle' && (
           <div className="flex justify-end mb-2">
             <span className="flex items-center gap-1.5 text-xs text-gray-400">
-              {saveState === 'saving' ? (
+              {saveState === 'saving' || saveState === 'dirty' ? (
                 <><Loader2 size={12} className="animate-spin" /> Guardando...</>
+              ) : saveState === 'saved' ? (
+                <><CheckCircle2 size={12} className="text-emerald-500" />
+                  Guardado{savedAt ? ` · ${savedAt.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}` : ''}</>
               ) : (
-                <><CheckCircle2 size={12} className="text-emerald-500" /> Guardado</>
+                <><AlertCircle size={12} className="text-amber-500" /> Sin guardar</>
               )}
             </span>
           </div>
@@ -120,6 +145,7 @@ export function AssistedPublisher() {
           draft={draft}
           payload={payload}
           validation={validation}
+          draftId={draftId}
           onBack={handleBack}
           onFieldChange={handleFieldChange}
         />

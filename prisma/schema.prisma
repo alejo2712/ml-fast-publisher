@@ -25,6 +25,7 @@ model User {
   publishHistory     PublishHistory[]
   bulkUploads        BulkUpload[]
   mlAccounts         MercadoLibreAccount[]
+  sellerPreferences  SellerPreferences?
 
   @@map("users")
 }
@@ -132,9 +133,9 @@ model ProductTemplate {
   name          String
   applianceType String   @map("appliance_type")
   description   String?
-  // Base draft data to pre-fill when creating from this template
   templateData  Json     @map("template_data")
   useCount      Int      @default(0) @map("use_count")
+  isFavorite    Boolean  @default(false) @map("is_favorite")
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
@@ -198,4 +199,23 @@ model BulkUpload {
 
   @@index([userId, createdAt(sort: Desc)])
   @@map("bulk_uploads")
+}
+
+// ─── Seller Preferences ───────────────────────────────────────────────────────
+
+model SellerPreferences {
+  id                 String   @id @default(cuid())
+  userId             String   @unique @map("user_id")
+  defaultCurrency    String   @default("ARS") @map("default_currency")
+  defaultShipping    String   @default("me2") @map("default_shipping")
+  defaultWarranty    String?  @map("default_warranty")
+  localPickUp        Boolean  @default(false) @map("local_pick_up")
+  defaultCondition   String?  @map("default_condition")
+  defaultListingType String   @default("gold_special") @map("default_listing_type")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("seller_preferences")
 }
