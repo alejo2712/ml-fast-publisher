@@ -6,10 +6,12 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { getCredentials, refreshAccessToken } from '@/lib/mercadolibre/auth';
 import { publishBulkItems, isDryRun } from '@/lib/mercadolibre/publish';
+import { runPreflight } from '@/lib/mercadolibre/preflight';
 import { prepareImages } from '@/lib/images/prepare-images';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
 import type { MLPayload } from '@/types';
+import type { PreflightResult } from '@/lib/mercadolibre/types';
 
 interface PublishRequestItem {
   payload: MLPayload;
@@ -28,6 +30,8 @@ export async function POST(request: NextRequest) {
 
   const dryRun = isDryRun();
   const items: PublishRequestItem[] = body.items;
+  // Preflight result per item (stored in history for real publishes)
+  const preflightResults: (PreflightResult | null)[] = new Array(items.length).fill(null);
 
   // ── Server-side payload validation ────────────────────────────────────────
   const validationErrors: { rowIndex?: number; errors: string[] }[] = [];
@@ -73,6 +77,33 @@ export async function POST(request: NextRequest) {
       },
       { status: 422 }
     );
+  }
+
+  // ── Preflight check (real publish only) ──────────────────────────────────
+  // Run per-item preflight and return early if any blocking issues found.
+  if (!dryRun && userId) {
+    for (let i = 0; i < items.length; i++) {
+      const pf = await runPreflight(userId, items[i].payload);
+      preflightResults[i] = pf;
+      if (!pf.ready) {
+        // Persist as PREFLIGHT_FAILED before returning error
+        await prisma.publishHistory.create({
+          data: {
+            userId,
+            draftId: items[i].draftId ?? null,
+            status: 'PREFLIGHT_FAILED',
+            dryRun: false,
+            payload: items[i].payload as object,
+            errorMessage: pf.checks.filter(c => c.status === 'error').map(c => c.detail).join('; '),
+            preflightResult: pf as object,
+          },
+        }).catch(() => { /* non-blocking */ });
+        return NextResponse.json({
+          error: 'Preflight fallido — corregí los problemas antes de publicar',
+          preflight: pf,
+        }, { status: 422 });
+      }
+    }
   }
 
   // ── Credentials & token refresh ───────────────────────────────────────────
@@ -125,6 +156,8 @@ export async function POST(request: NextRequest) {
     await Promise.allSettled(
       result.results.map((r, i) => {
         const item = items[i];
+        const rawPaths = (item.payload.pictures ?? []).map((p) => p.source);
+        const imgPrep = prepareImages(rawPaths, dryRun);
         return prisma.publishHistory.create({
           data: {
             userId,
@@ -135,6 +168,8 @@ export async function POST(request: NextRequest) {
             dryRun,
             payload: item.payload as object,
             errorMessage: r.status === 'failed' ? r.message : null,
+            preflightResult: preflightResults[i] ? (preflightResults[i] as object) : undefined,
+            imagePrepResult: imgPrep as object,
           },
         });
       })

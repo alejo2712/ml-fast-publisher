@@ -1,7 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Send, AlertTriangle, CheckCircle2, Loader2, ShieldAlert, FlaskConical, X, ImageIcon } from 'lucide-react';
+import {
+  Send, AlertTriangle, CheckCircle2, Loader2, ShieldAlert, FlaskConical,
+  X, ImageIcon, ShieldCheck, AlertCircle, Info,
+} from 'lucide-react';
 import { cn } from '@/components/ui';
 import type { MLPayload } from '@/types';
 import type { MLBulkPublishResult } from '@/lib/mercadolibre/types';
@@ -14,13 +17,80 @@ interface MLStatus {
   userId: string | null;
 }
 
+interface PreflightCheck {
+  id: string;
+  label: string;
+  status: 'ok' | 'warning' | 'error' | 'skip';
+  detail: string;
+}
+
+interface PreflightResult {
+  ready: boolean;
+  dryRun: boolean;
+  checks: PreflightCheck[];
+  blockingCount: number;
+  warningCount: number;
+}
+
 interface PublishButtonProps {
   payload: MLPayload;
   isReady: boolean;
-  /** True when any image in the payload is a local /uploads/ path */
   hasLocalImages?: boolean;
   rowIndex?: number;
   onResult?: (result: MLBulkPublishResult) => void;
+}
+
+function CheckIcon({ status }: { status: PreflightCheck['status'] }) {
+  if (status === 'ok')      return <CheckCircle2 size={13} className="text-emerald-500 shrink-0" />;
+  if (status === 'warning') return <AlertTriangle size={13} className="text-amber-500 shrink-0" />;
+  if (status === 'error')   return <AlertCircle size={13} className="text-red-500 shrink-0" />;
+  return <Info size={13} className="text-gray-400 shrink-0" />;
+}
+
+function PreflightPanel({ preflight, loading }: { preflight: PreflightResult | null; loading: boolean }) {
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 bg-gray-50 rounded-xl p-3 text-sm text-gray-500">
+        <Loader2 size={14} className="animate-spin text-indigo-400" />
+        Verificando preparación...
+      </div>
+    );
+  }
+  if (!preflight) return null;
+
+  return (
+    <div className={cn(
+      'rounded-xl border p-3 space-y-2',
+      preflight.ready ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'
+    )}>
+      <div className="flex items-center gap-2">
+        {preflight.ready
+          ? <ShieldCheck size={14} className="text-emerald-600 shrink-0" />
+          : <AlertCircle size={14} className="text-red-600 shrink-0" />}
+        <p className={cn('text-xs font-semibold', preflight.ready ? 'text-emerald-700' : 'text-red-700')}>
+          {preflight.ready
+            ? preflight.warningCount > 0
+              ? `Listo con ${preflight.warningCount} advertencia${preflight.warningCount > 1 ? 's' : ''}`
+              : 'Todo listo para publicar'
+            : `${preflight.blockingCount} problema${preflight.blockingCount > 1 ? 's' : ''} bloqueante${preflight.blockingCount > 1 ? 's' : ''} detectado${preflight.blockingCount > 1 ? 's' : ''}`}
+        </p>
+      </div>
+      <div className="space-y-1.5">
+        {preflight.checks.filter(c => c.status !== 'ok' && c.status !== 'skip').map((check) => (
+          <div key={check.id} className="flex items-start gap-2">
+            <CheckIcon status={check.status} />
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-gray-800">{check.label}</p>
+              <p className="text-xs text-gray-500 leading-snug">{check.detail}</p>
+            </div>
+          </div>
+        ))}
+        {preflight.checks.filter(c => c.status !== 'ok' && c.status !== 'skip').length === 0 && (
+          <p className="text-xs text-emerald-600">Todos los checks pasaron correctamente.</p>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function ConfirmModal({
@@ -39,11 +109,38 @@ function ConfirmModal({
   isPublishing: boolean;
 }) {
   const [realPublishConfirmed, setRealPublishConfirmed] = useState(false);
+  const [preflight, setPreflight] = useState<PreflightResult | null>(null);
+  const [preflightLoading, setPreflightLoading] = useState(false);
+
   const blockedByImages = !mlStatus.dryRun && hasLocalImages;
+
+  // Auto-run preflight when modal opens in real mode
+  useEffect(() => {
+    if (mlStatus.dryRun) return;
+    setPreflightLoading(true);
+    fetch('/api/ml/preflight', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ payload }),
+    })
+      .then(r => r.json())
+      .then(data => setPreflight(data as PreflightResult))
+      .catch(() => { /* silent — will show generic fallback */ })
+      .finally(() => setPreflightLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const preflightBlocking = !mlStatus.dryRun && preflight !== null && !preflight.ready;
+  const confirmDisabled =
+    isPublishing ||
+    blockedByImages ||
+    preflightLoading ||
+    preflightBlocking ||
+    (!mlStatus.dryRun && !realPublishConfirmed);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md space-y-5 p-6">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md space-y-4 p-6 max-h-[90vh] overflow-y-auto">
         <div className="flex items-start justify-between">
           <div>
             <h2 className="font-bold text-gray-900 text-lg">Confirmar publicación</h2>
@@ -68,13 +165,16 @@ function ConfirmModal({
           </div>
         )}
 
-        {/* Local images warning — dry-run: informational; real: blocking */}
+        {/* Preflight panel — real mode only */}
+        {!mlStatus.dryRun && (
+          <PreflightPanel preflight={preflight} loading={preflightLoading} />
+        )}
+
+        {/* Local images warning */}
         {hasLocalImages && (
           <div className={cn(
             'flex items-start gap-3 rounded-xl p-3 text-sm',
-            mlStatus.dryRun
-              ? 'bg-amber-50 border border-amber-200'
-              : 'bg-red-50 border border-red-200'
+            mlStatus.dryRun ? 'bg-amber-50 border border-amber-200' : 'bg-red-50 border border-red-200'
           )}>
             <ImageIcon size={16} className={cn('mt-0.5 shrink-0', mlStatus.dryRun ? 'text-amber-500' : 'text-red-500')} />
             <div>
@@ -83,8 +183,8 @@ function ConfirmModal({
               </p>
               <p className={cn('text-xs mt-0.5', mlStatus.dryRun ? 'text-amber-600' : 'text-red-600')}>
                 {mlStatus.dryRun
-                  ? 'Las imágenes locales (/uploads/...) funcionan en dry-run pero Mercado Libre no puede accederlas en publicación real. Agregá imágenes desde URLs HTTPS públicas o configurá IMAGE_PUBLIC_BASE_URL.'
-                  : 'Las imágenes locales no son accesibles desde internet. Mercado Libre requiere URLs HTTPS públicas. Reemplazá las imágenes o configurá IMAGE_PUBLIC_BASE_URL antes de publicar.'}
+                  ? 'Las imágenes locales funcionan en dry-run pero ML no puede accederlas en publicación real.'
+                  : 'ML requiere URLs HTTPS públicas. Reemplazá las imágenes o configurá IMAGE_PUBLIC_BASE_URL.'}
               </p>
             </div>
           </div>
@@ -110,7 +210,7 @@ function ConfirmModal({
             <div>
               <p className="font-semibold text-red-700">No conectado a Mercado Libre</p>
               <p className="text-red-600 text-xs mt-0.5">
-                <a href="/api/ml/auth" className="underline font-medium">Conectar cuenta ML</a> antes de publicar.
+                <a href="/settings/mercadolibre" className="underline font-medium">Conectar cuenta ML</a> antes de publicar.
               </p>
             </div>
           </div>
@@ -127,9 +227,7 @@ function ConfirmModal({
           <p className="text-xs text-gray-400">Cat: {payload.category_id} · Tipo: {payload.listing_type_id}</p>
           <p className="text-xs text-gray-400">
             {payload.pictures.length} imagen{payload.pictures.length !== 1 ? 'es' : ''}
-            {hasLocalImages && (
-              <span className="ml-1 text-amber-500">· contiene imágenes locales</span>
-            )}
+            {hasLocalImages && <span className="ml-1 text-amber-500">· contiene imágenes locales</span>}
           </p>
         </div>
 
@@ -158,7 +256,14 @@ function ConfirmModal({
           </button>
           <button
             onClick={onConfirm}
-            disabled={isPublishing || blockedByImages || (!mlStatus.dryRun && !realPublishConfirmed)}
+            disabled={confirmDisabled}
+            title={
+              preflightBlocking
+                ? `Preflight falló: ${preflight?.blockingCount} problema(s) bloqueante(s)`
+                : !realPublishConfirmed && !mlStatus.dryRun
+                ? 'Marcá el checkbox para confirmar'
+                : undefined
+            }
             className={cn(
               'flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all',
               mlStatus.dryRun
@@ -204,7 +309,18 @@ export function PublishButton({ payload, isReady, hasLocalImages = false, rowInd
       });
       const data = await res.json();
 
-      // Surface image errors returned by the server as a publish failure
+      // Surface preflight errors from server
+      if (!res.ok && data.preflight) {
+        const blocking = data.preflight.checks?.filter((c: PreflightCheck) => c.status === 'error') ?? [];
+        const msg = blocking[0]?.detail ?? data.error ?? 'Preflight fallido';
+        setResult({
+          results: [{ status: 'failed', message: msg, rowIndex }],
+          totalPublished: 0, totalFailed: 1, totalSkipped: 0, dryRun: false,
+        });
+        return;
+      }
+
+      // Surface image errors
       if (!res.ok && data.imageErrors) {
         const msg = data.imageErrors[0]?.errors?.[0] ?? data.error ?? 'Error de imágenes';
         setResult({
@@ -257,7 +373,6 @@ export function PublishButton({ payload, isReady, hasLocalImages = false, rowInd
   }
 
   const inDryRun = mlStatus?.dryRun ?? true;
-  // Block the button when not dry-run and local images present
   const blockedByImages = !inDryRun && hasLocalImages;
   const isDisabled = !isReady || blockedByImages;
 

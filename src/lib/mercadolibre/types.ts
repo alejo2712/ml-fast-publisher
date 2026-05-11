@@ -37,3 +37,22 @@ export interface MLErrorResponse {
   status: number;
   cause: unknown[];
 }
+
+// ─── Preflight ────────────────────────────────────────────────────────────────
+
+export type PreflightCheckStatus = 'ok' | 'warning' | 'error' | 'skip';
+
+export interface PreflightCheck {
+  id: string;
+  label: string;
+  status: PreflightCheckStatus;
+  detail: string;
+}
+
+export interface PreflightResult {
+  ready: boolean;       // true when zero error checks
+  dryRun: boolean;
+  checks: PreflightCheck[];
+  blockingCount: number;  // number of 'error' checks
+  warningCount: number;   // number of 'warning' checks
+}

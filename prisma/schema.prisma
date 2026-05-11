@@ -153,6 +153,8 @@ enum PublishStatus {
   DRY_RUN
   FAILED
   SKIPPED
+  VALIDATION_FAILED
+  PREFLIGHT_FAILED
 }
 
 model PublishHistory {
@@ -164,8 +166,10 @@ model PublishHistory {
   status       PublishStatus
   dryRun       Boolean       @default(true) @map("dry_run")
   payload      Json          // full ML payload that was sent
-  errorMessage String?       @map("error_message") @db.Text
-  createdAt    DateTime      @default(now()) @map("created_at")
+  errorMessage    String?       @map("error_message") @db.Text
+  preflightResult Json?         @map("preflight_result")   // structured PreflightResult from /api/ml/preflight
+  imagePrepResult Json?         @map("image_prep_result")  // ImagePreparationResult from prepareImages
+  createdAt       DateTime      @default(now()) @map("created_at")
 
   user  User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   draft ProductDraft? @relation(fields: [draftId], references: [id], onDelete: SetNull)

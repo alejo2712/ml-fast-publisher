@@ -281,14 +281,43 @@ npm run dev
 - "Reconectar cuenta ML" / "Conectar cuenta ML" button (links to /api/ml/auth)
 - Dry-run test button → POST /api/ml/test-dry-run → shows result inline + records in history
 
+### Session 8 additions
+- [x] Schema: VALIDATION_FAILED + PREFLIGHT_FAILED added to PublishStatus enum; preflightResult + imagePrepResult nullable JSON columns on PublishHistory
+- [x] Prisma client regenerated (`prisma generate`) — run `DATABASE_URL=... npx prisma db push` to sync DB
+- [x] src/lib/mercadolibre/preflight.ts: runPreflight(userId, payload) — 8 ordered checks, structured PreflightResult
+- [x] POST /api/ml/preflight — auth-gated readiness endpoint, no publish
+- [x] DELETE /api/ml/disconnect — removes MercadoLibreAccount from DB + clears in-memory cache
+- [x] /api/ml/publish: auto-runs preflight for real publishes; returns 422 with preflight details if blocking; stores preflightResult + imagePrepResult in history
+- [x] PublishButton: auto-runs preflight when confirm modal opens in real mode; blocks confirm on error checks; warns on warnings; confirmation checkbox retained
+- [x] MLConnectionSettings redesign: disconnect button + confirmation modal, real-mode warning banner, diagnostics card with per-check preflight panel, "Verificar preparación" button
+- [x] PublishHistory: stores preflightResult + imagePrepResult JSON per entry
+- [x] README: full OAuth setup, disconnect flow, preflight docs, production rollout checklist
+- [x] Build passing (31 routes, 0 TypeScript errors)
+
+### preflight.ts checks (in order)
+1. credentials — credentials configured in env
+2. oauth_connected — MercadoLibreAccount in DB (error in real mode, warning in dry-run)
+3. token_fresh — token expiry check (warning if expired or <5min; auto-refresh on publish)
+4. refresh_token — refresh token present
+5. dry_run_mode — mode awareness (ok=dry-run, warning=real mode)
+6. payload_valid — required fields: title length, price, category_id, condition, available_quantity
+7. images — at least 1 image; HTTPS required in real mode; local paths blocked
+8. image_hosting — IMAGE_PUBLIC_BASE_URL validation (only shown when local images + no base URL)
+
+### Disconnect flow
+- DELETE /api/ml/disconnect — deleteMany MercadoLibreAccount for userId + clearTokens() in-memory
+- MLConnectionSettings shows "Desconectar" button (red, only when connected)
+- Confirmation modal before delete
+- After disconnect: status refetched, readiness result cleared
+
 ## Next Session Instructions
-1. Add real ML OAuth test with sandbox credentials — verify callback → DB persist → publish flow end-to-end
-2. Add additional categories: mobile phones, mattresses (follow pattern in `src/config/categories/appliances.ts`)
-3. Persist bulk CSV results to `BulkUpload` DB table for history/audit
-4. Add Claude/OpenAI integration to replace deterministic inference (`src/lib/inference/index.ts` — swap adapter)
-5. Keyboard shortcuts: Tab through bulk edit fields, Enter to save, Shift+Enter to next row
-6. Run `npx prisma migrate dev` against a real DB and verify all migrations apply cleanly
-7. For real ML publishing with uploaded images: add ML CDN image upload step before publish (POST /pictures, get secure_url, replace local paths)
+1. Run `DATABASE_URL=... npx prisma db push` to apply schema changes (VALIDATION_FAILED, PREFLIGHT_FAILED enum values + preflightResult/imagePrepResult columns)
+2. Run live OAuth flow with real ML sandbox credentials: connect → verify DB row → test dry-run → test preflight → verify disconnect clears DB row
+3. Add additional categories: mobile phones, mattresses (follow pattern in `src/config/categories/appliances.ts`)
+4. Persist bulk CSV results to `BulkUpload` DB table for history/audit
+5. Add Claude/OpenAI integration to replace deterministic inference (`src/lib/inference/index.ts` — swap adapter)
+6. For real ML publishing with uploaded images: add ML CDN image upload step before publish (POST /pictures, get secure_url, replace local paths)
+7. Keyboard shortcuts: Tab through bulk edit fields, Enter to save, Shift+Enter to next row
 
 ## WARNINGS — Read Before Enabling Real Publishing
 - `MERCADOLIBRE_DRY_RUN` defaults to `true` — no real publish without explicit opt-in
@@ -296,6 +325,8 @@ npm run dev
 - ML description must not contain phone numbers, emails, or WhatsApp — validation blocks common patterns
 - Rate limit: ~50 req/s — bulk publish adds 100ms delay between items
 - Prisma 7: no `url` in schema.prisma — connection URL lives in `prisma.config.ts` and `db.ts` adapter
+- No migrations folder — project uses `prisma db push` for schema sync. Run `DATABASE_URL=... npx prisma db push` after any schema change.
+- Session 8 schema changes (VALIDATION_FAILED, PREFLIGHT_FAILED enum values + preflightResult/imagePrepResult columns) require `prisma db push` before those fields will work at runtime.
 - Local uploaded images (`/uploads/...`) cannot be published to ML in real mode — ML API requires publicly accessible HTTPS URLs. Set `IMAGE_PUBLIC_BASE_URL=https://your-domain.com` to auto-convert local paths, or use external HTTPS image URLs.
 
 ## Implementation Rules

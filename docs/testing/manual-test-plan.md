@@ -262,6 +262,53 @@
 
 ---
 
+## 17. OAuth connect / disconnect / reconnect
+
+| # | Steps | Expected |
+|---|-------|----------|
+| 17.1 | Visit `/settings/mercadolibre` with no credentials | "Credenciales configuradas" shows red X + setup instructions |
+| 17.2 | Set credentials, restart server, visit page | "Credenciales configuradas" shows green check |
+| 17.3 | Click "Conectar cuenta ML" | Redirects to ML OAuth page |
+| 17.4 | Approve OAuth in ML | Redirects to `/settings/mercadolibre?connected=true`, toast success |
+| 17.5 | After connect, check connection status row | Green check + ML User ID + token expiry |
+| 17.6 | Restart server, visit `/api/ml/status` | `connected: true` (DB fallback working) |
+| 17.7 | Click "Desconectar" button | Confirmation modal appears |
+| 17.8 | Cancel disconnect modal | Nothing changes |
+| 17.9 | Confirm disconnect | Toast success, "Cuenta ML conectada" row shows red X |
+| 17.10 | Check `/api/ml/status` after disconnect | `connected: false` |
+| 17.11 | Reconnect after disconnect | Full OAuth flow works again |
+
+---
+
+## 18. Preflight checks
+
+| # | Steps | Expected |
+|---|-------|----------|
+| 18.1 | `/settings/mercadolibre` → click "Verificar preparación" | Runs preflight with sample payload, shows all checks |
+| 18.2 | All credentials + OAuth connected + HTTPS images | All checks green |
+| 18.3 | Not connected (real mode) | "Cuenta ML conectada" check shows red error |
+| 18.4 | Local images + DRY_RUN=false | "Imágenes del producto" shows red error |
+| 18.5 | Local images + DRY_RUN=true | "Imágenes del producto" shows amber warning (not blocking) |
+| 18.6 | `POST /api/ml/preflight` with empty payload | Returns 400 |
+| 18.7 | `POST /api/ml/preflight` with invalid payload | Returns 200 with blocking checks in result |
+| 18.8 | `POST /api/ml/preflight` without session | Returns 401 |
+| 18.9 | Open publish confirm modal in real mode | Preflight runs automatically, spinner → results |
+| 18.10 | Blocking preflight result in confirm modal | Confirm button disabled; errors shown |
+| 18.11 | Warning-only preflight in confirm modal | Confirm button enabled after checkbox ticked |
+| 18.12 | `POST /api/ml/publish` with blocking preflight | Returns 422 with `preflight` object + records PREFLIGHT_FAILED in history |
+
+---
+
+## 19. Publish history metadata
+
+| # | Steps | Expected |
+|---|-------|----------|
+| 19.1 | Dry-run publish → check DB `publish_history` | `dry_run=true`, `status=DRY_RUN`, `image_prep_result` not null |
+| 19.2 | Real publish with good payload → check DB | `preflight_result` and `image_prep_result` populated |
+| 19.3 | Real publish blocked by preflight → check DB | Row with `status=PREFLIGHT_FAILED` and `preflight_result` |
+
+---
+
 ## Known limitations (not bugs)
 
 - ML OAuth tokens are also cached in-memory — cleared on server restart, but DB fallback restores them on next request to `/api/ml/status` or publish.
