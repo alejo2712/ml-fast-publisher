@@ -201,20 +201,28 @@ ENERGY_EFFICIENCY, COOLING_TYPE, POWER_CONSUMPTION, TYPE
 ## Local Dev Setup
 
 ```bash
-# 1. Start Postgres
+# Option A: Native Postgres (macOS/Homebrew — recommended, currently in use)
+brew install postgresql@16 && brew services start postgresql@16
+psql -U $(whoami) -d postgres -c "CREATE ROLE mlpublisher WITH LOGIN PASSWORD 'mlpublisher';"
+psql -U $(whoami) -d postgres -c "CREATE DATABASE mlpublisher OWNER mlpublisher;"
+
+# Option B: Docker
 docker-compose up -d
 
-# 2. Copy env and fill in AUTH_SECRET
-cp .env.example .env
+# Copy env and fill in AUTH_SECRET
+cp .env.example .env.local
 openssl rand -base64 32   # paste output as AUTH_SECRET
 
-# 3. Run migrations + generate client
-npx prisma migrate dev --name init
+# Push schema (no migrations — prisma db push only)
+DATABASE_URL="postgresql://mlpublisher:mlpublisher@localhost:5432/mlpublisher" npx prisma db push
 npx prisma generate
 
-# 4. Start dev server
+# Start dev server
 npm run dev
 ```
+
+> Note: This project uses `prisma db push` — there is no migrations folder.
+> Never run `prisma migrate dev`. Run `prisma db push` after any schema change.
 
 ## Current Status
 - [x] Project scaffolded (Next.js 16, TypeScript, Tailwind)
@@ -273,6 +281,31 @@ npm run dev
 - [x] PublishButton: real-publish confirmation checkbox (must tick before confirm when DRY_RUN=false)
 - [x] Build passing (28 routes, 0 TypeScript errors)
 
+### Session 8 additions
+- [x] Schema: VALIDATION_FAILED + PREFLIGHT_FAILED added to PublishStatus enum; preflightResult + imagePrepResult nullable JSON columns on PublishHistory
+- [x] Prisma client regenerated; DB synced via `prisma db push`
+- [x] src/lib/mercadolibre/preflight.ts: runPreflight(userId, payload) — 8 ordered checks, structured PreflightResult
+- [x] POST /api/ml/preflight — auth-gated readiness endpoint, no publish
+- [x] DELETE /api/ml/disconnect — removes MercadoLibreAccount from DB + clears in-memory cache
+- [x] /api/ml/publish: auto-runs preflight for real publishes; returns 422 with preflight details if blocking; stores preflightResult + imagePrepResult in history
+- [x] PublishButton: auto-runs preflight when confirm modal opens in real mode; blocks confirm on error checks; warns on warnings; confirmation checkbox retained
+- [x] MLConnectionSettings redesign: disconnect button + confirmation modal, real-mode warning banner, diagnostics card with per-check preflight panel, "Verificar preparación" button
+- [x] PublishHistory: stores preflightResult + imagePrepResult JSON per entry
+- [x] Build passing (31 routes, 0 TypeScript errors)
+
+### Session 9 additions (deployment readiness)
+- [x] src/lib/env/types.ts — EnvVarStatus, EnvVarResult, EnvValidationResult types
+- [x] src/lib/env/server.ts — validateEnv(): centralized env validation; distinguishes required/optional/default; never exposes secrets
+- [x] src/lib/env/client.ts — ClientEnvContext interface; no process.env access; values come from /api/health
+- [x] src/lib/logger.ts — structured server logger with domain helpers (oauth, publish, db, health); silent in test; debug/info only in dev
+- [x] src/lib/diagnostics/index.ts — runDiagnostics(): aggregates env/database/auth/mercadolibre/imageHosting; subsystem status cards
+- [x] GET /api/health — public endpoint; 503 on DB error, 200 otherwise; used by uptime monitors
+- [x] /settings/system — SystemSettings client component; collapsible subsystem cards; real-mode warning banner; auto-expands non-ok cards
+- [x] Nav: Sistema link added (Activity icon) pointing to /settings/system
+- [x] docs/deployment/vercel.md — Vercel deploy guide (env vars, DB, ML app registration, file uploads, production checklist)
+- [x] docs/deployment/postgres.md — PostgreSQL setup guide (Homebrew, Docker, managed production)
+- [x] README: /api/health docs, environment validation docs, deployment links, updated architecture
+
 ### ML OAuth page (src/components/MLConnectionSettings/)
 - Fetches /api/ml/status on mount and on ?connected=true callback
 - Shows per-check status rows: credentials, connection, dry-run mode, image hosting
@@ -311,13 +344,13 @@ npm run dev
 - After disconnect: status refetched, readiness result cleared
 
 ## Next Session Instructions
-1. Run `DATABASE_URL=... npx prisma db push` to apply schema changes (VALIDATION_FAILED, PREFLIGHT_FAILED enum values + preflightResult/imagePrepResult columns)
-2. Run live OAuth flow with real ML sandbox credentials: connect → verify DB row → test dry-run → test preflight → verify disconnect clears DB row
-3. Add additional categories: mobile phones, mattresses (follow pattern in `src/config/categories/appliances.ts`)
-4. Persist bulk CSV results to `BulkUpload` DB table for history/audit
-5. Add Claude/OpenAI integration to replace deterministic inference (`src/lib/inference/index.ts` — swap adapter)
-6. For real ML publishing with uploaded images: add ML CDN image upload step before publish (POST /pictures, get secure_url, replace local paths)
-7. Keyboard shortcuts: Tab through bulk edit fields, Enter to save, Shift+Enter to next row
+1. Run live OAuth flow with real ML sandbox credentials: connect → verify DB row → test dry-run → test preflight → verify disconnect clears DB row
+2. Add additional categories: mobile phones, mattresses (follow pattern in `src/config/categories/appliances.ts`)
+3. Persist bulk CSV results to `BulkUpload` DB table for history/audit
+4. Add Claude/OpenAI integration to replace deterministic inference (`src/lib/inference/index.ts` — swap adapter)
+5. For real ML publishing with uploaded images: add ML CDN image upload step before publish (POST /pictures, get secure_url, replace local paths)
+6. Keyboard shortcuts: Tab through bulk edit fields, Enter to save, Shift+Enter to next row
+7. Production deploy: follow docs/deployment/vercel.md — set env vars, run prisma db push against production DB, verify /api/health returns ok
 
 ## WARNINGS — Read Before Enabling Real Publishing
 - `MERCADOLIBRE_DRY_RUN` defaults to `true` — no real publish without explicit opt-in

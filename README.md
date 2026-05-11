@@ -149,6 +149,59 @@ Mercado Libre requiere URLs **HTTPS públicas**. Las imágenes locales (`/upload
 
 ---
 
+## Health endpoint y diagnósticos
+
+`GET /api/health` — público, sin auth. Devuelve estado de todos los subsistemas.
+
+```bash
+curl http://localhost:3000/api/health | jq .status
+```
+
+Respuesta:
+```json
+{
+  "status": "ok | warning | error",
+  "version": "0.1.0",
+  "subsystems": {
+    "env": { "status": "ok" },
+    "database": { "status": "ok" },
+    "auth": { "status": "ok" },
+    "mercadolibre": { "status": "warning" },
+    "imageHosting": { "status": "ok" }
+  },
+  "warnings": ["MERCADOLIBRE_DRY_RUN=false — publicación real activa"],
+  "details": { ... }
+}
+```
+
+Retorna HTTP **503** si la base de datos está inaccesible, HTTP **200** en todos los demás casos.
+
+- Úsalo como endpoint de uptime monitoring (UptimeRobot, Better Uptime, etc.)
+- En `/settings/system` hay un dashboard visual con el detalle de cada check
+
+---
+
+## Sistema de validación de entorno
+
+`src/lib/env/server.ts` — valida todas las variables de entorno al arranque y desde `/api/health`.
+
+- Distingue entre variables **requeridas** (error) y **opcionales** (warning)
+- Nunca expone valores de secretos en las respuestas
+- `MERCADOLIBRE_DRY_RUN` acepta solo `"true"` o `"false"` — valores inválidos generan warning
+- `IMAGE_PUBLIC_BASE_URL` debe comenzar con `https://` — `http://` genera error
+
+Resultado visible en `/settings/system` → sección "Variables de entorno".
+
+---
+
+## Deployment
+
+Ver documentación detallada:
+- `docs/deployment/vercel.md` — deploy en Vercel, variables, configuración ML app, notas sobre file uploads
+- `docs/deployment/postgres.md` — setup PostgreSQL local (Homebrew o Docker) y en producción
+
+---
+
 ## Checklist de rollout a producción
 
 Antes de habilitar publicación real en producción:
@@ -188,6 +241,11 @@ src/
     validation/          # validateDraft() — reglas estrictas + errores por campo
     csv/                 # Parser + template generator
     images/              # prepareImages() — clasificación y conversión de URLs
+    env/
+      server.ts          # validateEnv() — valida todas las vars (SERVER-SIDE ONLY)
+      client.ts          # ClientEnvContext — interfaz segura para el cliente
+    diagnostics/         # runDiagnostics() — agrega checks de todos los subsistemas
+    logger.ts            # Structured logger con helpers por dominio (SERVER-SIDE ONLY)
     mercadolibre/
       auth.ts            # OAuth helpers (SERVER-SIDE ONLY)
       client.ts          # Typed fetch wrapper (SERVER-SIDE ONLY)
@@ -205,6 +263,7 @@ src/
     AssistedPublisher/   # Flujo single-product
     PublishButton/       # Modal + preflight + dry-run indicator
     MLConnectionSettings/ # Dashboard de configuración ML
+    SystemSettings/      # /settings/system — diagnósticos visuales
     BulkUpload/          # Carga masiva
 ```
 
