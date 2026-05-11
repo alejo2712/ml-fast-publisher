@@ -1,12 +1,14 @@
 # ml-fast-publisher — Project Context
 
 ## Goal
-MVP frontend that lets users publish products to Mercado Libre in FEWER steps than ML's native flow, powered by a deterministic inference engine (AI-replaceable later).
+Multi-user publishing platform that lets users publish products to Mercado Libre in fewer steps than ML's native flow, powered by a deterministic inference engine (AI-replaceable later).
 
-## MVP Scope (TODAY)
+## MVP Scope
 - Home appliances (large + small)
-- Single-product assisted flow: text → infer → confirm missing → JSON preview
-- No ML API integration yet — only draft generation and preview
+- Single-product assisted flow: text → infer → confirm missing → JSON preview → publish
+- CSV bulk mode: upload/paste → per-row inference → validation → bulk export/publish
+- Multi-user: PostgreSQL + Prisma, NextAuth v5 (email/password), user-isolated data
+- Draft autosave, publish history, product templates
 
 ## Future Categories
 - Mobile phones, mattresses, sommiers, bed sheets, pillows, bicycles, baby strollers, skateboards, electric scooters
@@ -37,30 +39,74 @@ MVP frontend that lets users publish products to Mercado Libre in FEWER steps th
 - Blocks export/publish until `isReady === true`
 - `getMissingFields(draft)` is a backwards-compat alias for CSV parser
 
+### Database (Prisma 7 + PostgreSQL)
+- Schema: `prisma/schema.prisma` — source of truth for all models
+- Prisma config: `prisma.config.ts` at project root (Prisma 7 requirement — no `url` in schema)
+- Client: `src/lib/db.ts` — Prisma singleton using `@prisma/adapter-pg` driver adapter
+- Run `docker-compose up -d` to start Postgres locally (port 5432)
+- Run `npx prisma migrate dev` to apply migrations
+- Run `npx prisma generate` after schema changes
+
+### Auth (NextAuth v5 / Auth.js)
+- Config: `src/auth.ts` — Credentials provider, JWT strategy, PrismaAdapter
+- Protected routes: `/dashboard`, `/drafts`, `/templates`, `/history`
+- Middleware: `src/middleware.ts` — redirects to `/login?callbackUrl=...` if unauthenticated
+- Auth guard for API routes: `src/lib/auth-guard.ts` — `requireAuth()` throws 401 Response
+- Passwords hashed with bcryptjs (10 rounds)
+- Registration: `POST /api/register` — returns 409 on duplicate email
+- Sessions: JWT (stateless) — no DB session rows needed
+
+### Data Models
+- `User` — email, password hash, timestamps
+- `ProductDraft` — userId, title, applianceType, mlCategoryId, condition, price, stock, status (IN_PROGRESS/READY/PUBLISHED/ARCHIVED), draftData Json, lastPayload Json
+- `ProductTemplate` — userId, name, applianceType, templateData Json, useCount
+- `PublishHistory` — userId, draftId, mlItemId, permalink, status (PENDING/PUBLISHED/DRY_RUN/FAILED/SKIPPED), dryRun, payload Json
+- `BulkUpload` — userId, fileName, rowCount, successCount, failedCount, status, results Json
+- `MercadoLibreAccount` — userId, mlUserId, siteId, accessToken, refreshToken, expiresAt
+
+### API Routes
+All routes in `src/app/api/` — server-side only, no ML credentials in client.
+- `GET/POST  /api/drafts`           → list + create drafts (auth-gated)
+- `GET/PATCH/DELETE /api/drafts/[id]` → single draft ops (user-scoped)
+- `GET/POST  /api/templates`        → list + create templates
+- `DELETE/POST /api/templates/[id]` → delete + use (increments useCount)
+- `GET/POST  /api/history`          → paginated publish history
+- `POST      /api/register`         → create user account
+- `GET       /api/ml/status`        → ML credential + connection state
+- `GET       /api/ml/auth`          → redirects to ML OAuth page
+- `GET       /api/ml/callback`      → exchanges code for tokens
+- `POST      /api/ml/publish`       → validates + publishes (or dry-runs), persists history
+
+### Autosave
+- Hook: `src/hooks/useAutosave.ts` — debounced 1500ms, creates draft on first save, patches on subsequent
+- Wired into `AssistedPublisher` — shows "Guardando..." / "Guardado" indicator in review step
+- Errors are silent — never disrupt user flow
+
+### Toast System
+- `src/components/Toast/index.tsx` — `ToastProvider` + `useToast()` hook (no external deps)
+- `ToastProvider` wraps `{children}` in `src/app/layout.tsx`
+- Auto-dismisses after 4 seconds; 4 types: success/error/warning/info
+
+### Dashboard Pages
+- `(dashboard)` route group with shared authenticated layout (`AppNav` sidebar)
+- `/dashboard` — stats overview + recent drafts + recent history
+- `/drafts` — paginated draft list
+- `/templates` — template list
+- `/history` — paginated publish history
+
 ### Mercado Libre Integration
 - All ML API calls happen server-side — client never sees credentials or tokens
-- `src/lib/mercadolibre/auth.ts` — OAuth URL generation, code exchange, token refresh, in-memory store
+- `src/lib/mercadolibre/auth.ts` — OAuth URL generation, code exchange, token refresh
 - `src/lib/mercadolibre/client.ts` — typed fetch wrapper
 - `src/lib/mercadolibre/publish.ts` — `publishSingleItem` / `publishBulkItems` + dry-run gate
 - `MERCADOLIBRE_DRY_RUN=true` (default) blocks all real API calls — must explicitly set to "false"
-- Token store is in-memory (process lifetime). Replace with DB/KV for production.
-
-### API Routes (server-side only)
-- `GET  /api/ml/status`    → credential + connection state (no secrets exposed)
-- `GET  /api/ml/auth`      → redirects to ML OAuth page
-- `GET  /api/ml/callback`  → exchanges code for tokens, redirects back to app
-- `POST /api/ml/publish`   → validates payload server-side, calls ML API (or dry-runs)
-
-### Has Backend Now
-- Next.js API routes handle all server-side ML work
-- Client components call `/api/ml/*` — never import from `src/lib/mercadolibre/`
+- ML tokens stored in `MercadoLibreAccount` DB table (persisted across restarts)
 
 ### CSV Bulk Mode
-- CSV column definitions live in `src/lib/csv/template.ts` — single source of truth for headers, examples, and hints
+- CSV column definitions live in `src/lib/csv/template.ts` — single source of truth
 - To add a CSV column: add one entry to `CSV_COLUMNS` in `template.ts` — parser picks it up automatically
 - Parser: `src/lib/csv/parser.ts` — `parseCsvText(text)` returns `CsvParseResult` with per-row status
-- Each row runs `inferProduct` → `buildProductDraft` → `buildMLPayload` → `getMissingFields` (all reused from single flow)
-- Downloadable template always reflects current `CSV_COLUMNS` — no maintenance needed
+- Each row runs `inferProduct` → `buildProductDraft` → `buildMLPayload` → `getMissingFields`
 - Export: `exportAllPayloads(rows)` dumps all valid rows as a JSON array
 
 ---
@@ -83,36 +129,65 @@ ENERGY_EFFICIENCY, COOLING_TYPE, POWER_CONSUMPTION, TYPE
 
 ---
 
+## Local Dev Setup
+
+```bash
+# 1. Start Postgres
+docker-compose up -d
+
+# 2. Copy env and fill in AUTH_SECRET
+cp .env.example .env
+openssl rand -base64 32   # paste output as AUTH_SECRET
+
+# 3. Run migrations + generate client
+npx prisma migrate dev --name init
+npx prisma generate
+
+# 4. Start dev server
+npm run dev
+```
+
 ## Current Status
-- [x] Project scaffolded (Next.js 15, TypeScript, Tailwind)
-- [x] Core types, category config, inference engine, payload builder built
+- [x] Project scaffolded (Next.js 16, TypeScript, Tailwind)
+- [x] Core types, category config, inference engine, payload builder
 - [x] Single-product assisted flow (text → infer → review → JSON export)
 - [x] CSV bulk mode (upload or paste → per-row inference → validation → bulk JSON export)
 - [x] Strict validation: garbage detection, field-level errors, publish blocked until isReady
-- [x] MissingFields shows separate sections for invalid values vs missing values + status banner
 - [x] ML integration layer: auth, client, publish, dry-run (server-side only)
 - [x] API routes: /api/ml/status, /api/ml/auth, /api/ml/callback, /api/ml/publish
 - [x] PublishButton with confirmation modal, dry-run indicator, credential warnings
 - [x] Bulk publish: per-row status (idle/publishing/published/dry_run/failed), confirm modal
-- [x] .env.example with all required variables
+- [x] PostgreSQL + Prisma 7 (adapter-pg), docker-compose
+- [x] NextAuth v5 — email/password, JWT, PrismaAdapter
+- [x] Middleware protecting dashboard routes
+- [x] Auth-gated API routes (drafts, templates, history)
+- [x] Dashboard pages: stats, drafts list, templates, publish history
+- [x] Login + register pages
+- [x] Toast system (no external deps)
+- [x] Autosave hook wired into AssistedPublisher (debounced, "Guardado" indicator)
+- [x] Publish history persisted to DB
+- [x] .env.example with all required variables (DATABASE_URL, AUTH_SECRET, ML vars)
+- [x] Build passing (18 routes, 0 TypeScript errors)
 
 ## Next Session Instructions
 1. Add Claude/OpenAI integration to replace deterministic inference (`src/lib/inference/index.ts` — swap adapter)
 2. Add image upload with vision-based inference
 3. Add additional categories: mobile phones, mattresses
-4. Persist ML tokens across server restarts (replace in-memory store in `auth.ts` with file/DB/KV)
-5. Add inline field editing in bulk results table (edit price/condition per row before publish)
+4. Add inline field editing in bulk results table (edit price/condition per row before publish)
+5. Add "Save as template" button in single-product review step
 6. Add real ML OAuth test with sandbox credentials
+7. Run `npx prisma migrate dev --name init` against a real DB and verify migrations
 
 ## WARNINGS — Read Before Enabling Real Publishing
 - `MERCADOLIBRE_DRY_RUN` defaults to `true` — no real publish without explicit opt-in
-- ML tokens are in-memory only — lost on server restart
 - Category IDs (MLA1577 etc.) are estimates — verify via ML API before production
 - ML description must not contain phone numbers, emails, or WhatsApp — validation blocks common patterns
 - Rate limit: ~50 req/s — bulk publish adds 100ms delay between items
+- Prisma 7: no `url` in schema.prisma — connection URL lives in `prisma.config.ts` and `db.ts` adapter
 
 ## Implementation Rules
 - NEVER hardcode attribute logic in UI components
 - ALWAYS add new appliance types in `src/config/categories/appliances.ts`
 - Inference adapter is at `src/lib/inference/index.ts` — swap provider there
+- All DB queries must filter by `userId` from `requireAuth()` — never cross-user queries
 - Run `npm run dev` to test locally on localhost:3000

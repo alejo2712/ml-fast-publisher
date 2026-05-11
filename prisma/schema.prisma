@@ -1,0 +1,201 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Auth (NextAuth / Auth.js v5 standard models) ────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime? @map("email_verified")
+  image         String?
+  password      String?   // hashed — null for OAuth-only users
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  accounts           Account[]
+  sessions           Session[]
+  drafts             ProductDraft[]
+  templates          ProductTemplate[]
+  publishHistory     PublishHistory[]
+  bulkUploads        BulkUpload[]
+  mlAccounts         MercadoLibreAccount[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ─── Mercado Libre OAuth Tokens ───────────────────────────────────────────────
+
+model MercadoLibreAccount {
+  id           String   @id @default(cuid())
+  userId       String   @map("user_id")
+  mlUserId     String   @map("ml_user_id")
+  siteId       String   @default("MLA") @map("site_id")
+  accessToken  String   @map("access_token") @db.Text
+  refreshToken String   @map("refresh_token") @db.Text
+  expiresAt    DateTime @map("expires_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, siteId])
+  @@map("mercadolibre_accounts")
+}
+
+// ─── Product Drafts ───────────────────────────────────────────────────────────
+
+enum DraftStatus {
+  IN_PROGRESS
+  READY
+  PUBLISHED
+  ARCHIVED
+}
+
+model ProductDraft {
+  id            String      @id @default(cuid())
+  userId        String      @map("user_id")
+  title         String
+  applianceType String      @map("appliance_type")
+  mlCategoryId  String      @map("ml_category_id")
+  condition     String?
+  price         Float?
+  currency      String      @default("ARS")
+  stock         Int         @default(1)
+  status        DraftStatus @default(IN_PROGRESS)
+  rawInput      String?     @map("raw_input") @db.Text
+  // Full draft data stored as JSON — avoids premature column explosion
+  draftData     Json        @map("draft_data")
+  // Last generated ML payload (for history reference)
+  lastPayload   Json?       @map("last_payload")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  publishHistory PublishHistory[]
+
+  @@index([userId, status])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("product_drafts")
+}
+
+// ─── Product Templates ────────────────────────────────────────────────────────
+
+model ProductTemplate {
+  id            String   @id @default(cuid())
+  userId        String   @map("user_id")
+  name          String
+  applianceType String   @map("appliance_type")
+  description   String?
+  // Base draft data to pre-fill when creating from this template
+  templateData  Json     @map("template_data")
+  useCount      Int      @default(0) @map("use_count")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("product_templates")
+}
+
+// ─── Publish History ──────────────────────────────────────────────────────────
+
+enum PublishStatus {
+  PENDING
+  PUBLISHED
+  DRY_RUN
+  FAILED
+  SKIPPED
+}
+
+model PublishHistory {
+  id           String        @id @default(cuid())
+  userId       String        @map("user_id")
+  draftId      String?       @map("draft_id")
+  mlItemId     String?       @map("ml_item_id")
+  permalink    String?
+  status       PublishStatus
+  dryRun       Boolean       @default(true) @map("dry_run")
+  payload      Json          // full ML payload that was sent
+  errorMessage String?       @map("error_message") @db.Text
+  createdAt    DateTime      @default(now()) @map("created_at")
+
+  user  User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  draft ProductDraft? @relation(fields: [draftId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, status])
+  @@map("publish_history")
+}
+
+// ─── Bulk Uploads ─────────────────────────────────────────────────────────────
+
+enum BulkUploadStatus {
+  PROCESSING
+  COMPLETED
+  PARTIAL
+  FAILED
+}
+
+model BulkUpload {
+  id           String           @id @default(cuid())
+  userId       String           @map("user_id")
+  fileName     String           @map("file_name")
+  rowCount     Int              @map("row_count")
+  successCount Int              @default(0) @map("success_count")
+  failedCount  Int              @default(0) @map("failed_count")
+  status       BulkUploadStatus @default(PROCESSING)
+  results      Json?            // array of per-row results
+  createdAt    DateTime         @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("bulk_uploads")
+}

@@ -1,82 +1,85 @@
 /**
  * POST /api/ml/publish
- * Publishes one or multiple items to Mercado Libre.
- * Secrets and tokens never leave the server.
- *
- * Body (single):  { items: [{ payload: MLPayload, rowIndex?: number }] }
- * Returns:        MLBulkPublishResult
+ * Validates + publishes items. Records result in publish_history.
+ * Secrets never leave the server.
  */
 import { type NextRequest, NextResponse } from 'next/server';
 import { getCredentials, getValidTokens } from '@/lib/mercadolibre/auth';
 import { publishBulkItems, isDryRun } from '@/lib/mercadolibre/publish';
-import { validateDraft } from '@/lib/validation';
-import { buildProductDraft } from '@/lib/payload-builder';
+import { auth } from '@/auth';
+import { prisma } from '@/lib/db';
 import type { MLPayload } from '@/types';
 
 interface PublishRequestItem {
   payload: MLPayload;
   rowIndex?: number;
+  draftId?: string;
 }
 
 export async function POST(request: NextRequest) {
+  const session = await auth();
+  const userId = session?.user?.id ?? null;
+
   const body = await request.json().catch(() => null);
-
   if (!body || !Array.isArray(body.items) || body.items.length === 0) {
-    return NextResponse.json({ error: 'Invalid request body. Expected { items: [...] }' }, { status: 400 });
+    return NextResponse.json({ error: 'Invalid body. Expected { items: [...] }' }, { status: 400 });
   }
-
   const items: PublishRequestItem[] = body.items;
 
-  // Server-side: validate every payload before touching ML API
+  // Server-side payload validation
   const validationErrors: { rowIndex?: number; errors: string[] }[] = [];
   for (const item of items) {
     const errors: string[] = [];
-    if (!item.payload?.title || item.payload.title.trim().length < 10) {
-      errors.push('title: demasiado corto o vacío');
-    }
-    if (!item.payload?.price || item.payload.price <= 0) {
-      errors.push('price: debe ser mayor a 0');
-    }
-    if (!item.payload?.category_id) {
-      errors.push('category_id: faltante');
-    }
-    if (!item.payload?.condition) {
-      errors.push('condition: faltante');
-    }
-    if (errors.length > 0) {
-      validationErrors.push({ rowIndex: item.rowIndex, errors });
-    }
+    if (!item.payload?.title || item.payload.title.trim().length < 10) errors.push('title: demasiado corto');
+    if (!item.payload?.price || item.payload.price <= 0) errors.push('price: debe ser mayor a 0');
+    if (!item.payload?.category_id) errors.push('category_id: faltante');
+    if (!item.payload?.condition) errors.push('condition: faltante');
+    if (errors.length > 0) validationErrors.push({ rowIndex: item.rowIndex, errors });
   }
-
   if (validationErrors.length > 0) {
-    return NextResponse.json(
-      { error: 'Validation failed', validationErrors },
-      { status: 422 }
-    );
+    return NextResponse.json({ error: 'Validation failed', validationErrors }, { status: 422 });
   }
 
-  // Get credentials
   const credentials = getCredentials();
   if (!credentials && !isDryRun()) {
-    return NextResponse.json(
-      { error: 'Mercado Libre credentials not configured.' },
-      { status: 503 }
-    );
+    return NextResponse.json({ error: 'ML credentials not configured.' }, { status: 503 });
   }
 
-  // Get tokens (only needed for real publish)
   let accessToken = 'dry-run-token';
   if (!isDryRun()) {
-    const tokens = await getValidTokens(credentials!);
+    const tokens = userId
+      ? await prisma.mercadoLibreAccount.findFirst({ where: { userId } }).then((a) =>
+          a ? { accessToken: a.accessToken, refreshToken: a.refreshToken, expiresAt: a.expiresAt.getTime(), userId: a.mlUserId } : null
+        )
+      : null;
     if (!tokens) {
-      return NextResponse.json(
-        { error: 'Not connected to Mercado Libre. Complete OAuth first via /api/ml/auth' },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: 'Not connected to Mercado Libre.' }, { status: 401 });
     }
     accessToken = tokens.accessToken;
   }
 
   const result = await publishBulkItems(items, accessToken);
+
+  // Persist results to history if user is authenticated
+  if (userId) {
+    await Promise.allSettled(
+      result.results.map((r, i) => {
+        const item = items[i];
+        return prisma.publishHistory.create({
+          data: {
+            userId,
+            draftId: item.draftId ?? null,
+            mlItemId: r.itemId ?? null,
+            permalink: r.permalink ?? null,
+            status: r.status === 'published' ? 'PUBLISHED' : r.status === 'dry_run' ? 'DRY_RUN' : 'FAILED',
+            dryRun: isDryRun(),
+            payload: item.payload as object,
+            errorMessage: r.status === 'failed' ? r.message : null,
+          },
+        });
+      })
+    );
+  }
+
   return NextResponse.json(result);
 }
