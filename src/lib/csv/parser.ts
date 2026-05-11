@@ -80,10 +80,24 @@ function normalizeCondition(raw: string): Condition | undefined {
   return undefined;
 }
 
+// Legacy header aliases for backward compatibility with old CSV templates
+const LEGACY_HEADERS: Record<string, string> = {
+  imagen_url: 'imagenes',
+  capacidad: 'capacidad_litros',
+  watts: 'potencia_watts',
+};
+
 function mapRowToOverrides(row: Record<string, string>): Partial<ProductDraft> {
+  // Normalize row: apply legacy aliases so old column names still work
+  const normalizedRow: Record<string, string> = {};
+  for (const [k, v] of Object.entries(row)) {
+    const canonical = LEGACY_HEADERS[k] ?? k;
+    normalizedRow[canonical] = v;
+  }
+
   const get = (key: string) => {
     const col = CSV_COLUMNS.find((c) => c.key === key);
-    return col ? (row[col.header] ?? '') : '';
+    return col ? (normalizedRow[col.header] ?? '') : '';
   };
 
   const overrides: Partial<ProductDraft> = {};
@@ -115,8 +129,14 @@ function mapRowToOverrides(row: Record<string, string>): Partial<ProductDraft> {
   const voltage = get('voltage');
   if (voltage) overrides.voltage = voltage;
 
-  const capacity = get('capacity');
-  if (capacity && !isNaN(parseFloat(capacity))) overrides.capacity = capacity;
+  // capacity_litros and capacity_kg — prefer the more specific one
+  const capacityL = get('capacity');
+  const capacityKg = get('capacity_kg');
+  if (capacityL && !isNaN(parseFloat(capacityL))) {
+    overrides.capacity = capacityL;
+  } else if (capacityKg && !isNaN(parseFloat(capacityKg))) {
+    overrides.capacity = capacityKg;
+  }
 
   const watts = parseFloat(get('watts'));
   if (!isNaN(watts) && watts > 0) overrides.watts = watts;
@@ -130,12 +150,42 @@ function mapRowToOverrides(row: Record<string, string>): Partial<ProductDraft> {
   const description = get('description');
   if (description) overrides.description = description;
 
+  // Images — pipe-separated URLs
   const imageRaw = get('images');
   if (imageRaw) {
     overrides.images = imageRaw.split('|').map((u) => u.trim()).filter(Boolean);
   }
 
+  // Shipping overrides
+  const shippingMode = get('shipping_mode');
+  const localPickupRaw = get('local_pickup');
+  const freeShippingRaw = get('free_shipping');
+  if (shippingMode || localPickupRaw || freeShippingRaw) {
+    const parseBool = (v: string) => v.toLowerCase() === 'si' || v.toLowerCase() === 'yes' || v === '1' || v.toLowerCase() === 'true';
+    overrides.shipping = {
+      mode: (['me2', 'custom', 'not_specified'].includes(shippingMode) ? shippingMode : 'me2') as import('@/types').ShippingMode,
+      localPickUp: localPickupRaw ? parseBool(localPickupRaw) : false,
+      freeShipping: freeShippingRaw ? parseBool(freeShippingRaw) : false,
+    };
+  }
+
   return overrides;
+}
+
+/**
+ * Parse an Excel (.xlsx / .xls) ArrayBuffer into CSV text for processing.
+ * Uses the xlsx library (already in package.json).
+ */
+export async function parseXlsxBuffer(buffer: ArrayBuffer): Promise<string> {
+  const XLSX = await import('xlsx');
+  const wb = XLSX.read(buffer, { type: 'array' });
+
+  // Use the first sheet
+  const sheetName = wb.SheetNames[0];
+  const ws = wb.Sheets[sheetName];
+
+  // Convert to CSV text — parseCsvText handles the rest
+  return XLSX.utils.sheet_to_csv(ws);
 }
 
 export async function parseCsvText(text: string): Promise<CsvParseResult> {

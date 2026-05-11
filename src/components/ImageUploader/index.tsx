@@ -223,6 +223,7 @@ export function ImageUploader({ images, onChange, disabled }: ImageUploaderProps
       {!disabled && (
         <div
           onDrop={handleDrop}
+          onDragEnter={(e) => { e.preventDefault(); if (!disabled) setDragging(true); }}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onClick={() => fileInputRef.current?.click()}

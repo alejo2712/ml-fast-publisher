@@ -176,14 +176,14 @@ export function MissingFields({ validation, draft, onChange }: MissingFieldsProp
       )}
 
       {/* Truly missing fields — images are handled by ImageUploader in the review step */}
-      {missingFields.filter((f) => f.id !== 'images').length > 0 && (
+      {missingFields.filter((f) => f.id !== 'images' && !fieldErrors.some((e) => e.id === f.id)).length > 0 && (
         <div className="space-y-3">
           <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide">
             Campos requeridos faltantes
           </p>
           <div className="grid gap-3">
             {missingFields
-              .filter((f) => f.id !== 'images')
+              .filter((f) => f.id !== 'images' && !fieldErrors.some((e) => e.id === f.id))
               .map((field) => (
                 <FieldInput
                   key={field.id}

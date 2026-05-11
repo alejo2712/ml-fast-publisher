@@ -1,16 +1,33 @@
 'use client';
 
 import { useState, useRef, useCallback } from 'react';
-import { Upload, ClipboardPaste, Download, FileText, Loader2, SkipForward } from 'lucide-react';
+import { Upload, ClipboardPaste, Download, FileText, Loader2, SkipForward, FileSpreadsheet } from 'lucide-react';
 import { cn } from '@/components/ui';
-import { parseCsvText, type CsvRowResult } from '@/lib/csv/parser';
-import { downloadCsvTemplate, CSV_COLUMNS } from '@/lib/csv/template';
+import { parseCsvText, parseXlsxBuffer, type CsvRowResult } from '@/lib/csv/parser';
+import { downloadCsvTemplate, downloadExcelTemplate, CSV_COLUMNS } from '@/lib/csv/template';
 import { buildMLPayload } from '@/lib/payload-builder';
 import { validateDraft } from '@/lib/validation';
 import type { Condition, ProductDraft } from '@/types';
 import { BulkResults } from './BulkResults';
 
 type InputTab = 'upload' | 'paste';
+
+function isXlsxFile(file: File): boolean {
+  return (
+    file.name.endsWith('.xlsx') ||
+    file.name.endsWith('.xls') ||
+    file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+    file.type === 'application/vnd.ms-excel'
+  );
+}
+
+function isCsvFile(file: File): boolean {
+  return (
+    file.name.endsWith('.csv') ||
+    file.type === 'text/csv' ||
+    file.type === 'text/plain'
+  );
+}
 
 export function BulkUpload() {
   const [tab, setTab] = useState<InputTab>('upload');
@@ -40,11 +57,26 @@ export function BulkUpload() {
     }
   }
 
-  function handleFile(file: File) {
-    if (!file.name.endsWith('.csv') && file.type !== 'text/csv' && file.type !== 'text/plain') {
-      alert('Por favor subí un archivo .csv');
+  async function handleFile(file: File) {
+    if (isXlsxFile(file)) {
+      setIsProcessing(true);
+      setFileName(file.name);
+      try {
+        const buffer = await file.arrayBuffer();
+        const csvText = await parseXlsxBuffer(buffer);
+        await processText(csvText, file.name);
+      } catch (err) {
+        alert(`No se pudo leer el archivo Excel: ${err instanceof Error ? err.message : String(err)}`);
+        setIsProcessing(false);
+      }
       return;
     }
+
+    if (!isCsvFile(file)) {
+      alert('Subí un archivo .xlsx (Excel) o .csv');
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (e) => processText(String(e.target?.result ?? ''), file.name);
     reader.readAsText(file, 'utf-8');
@@ -57,9 +89,20 @@ export function BulkUpload() {
     if (file) handleFile(file);
   }
 
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragging(true);
+  }
+
+  function handleDragEnter(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragging(true);
+  }
+
   function handleFileInput(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (file) handleFile(file);
+    e.target.value = '';
   }
 
   function handlePasteSubmit() {
@@ -100,8 +143,10 @@ export function BulkUpload() {
     return (
       <div className="w-full max-w-3xl mx-auto space-y-2">
         <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">
-          <FileText size={14} />
-          <span>{fileName || 'archivo CSV'}</span>
+          {fileName.endsWith('.xlsx') || fileName.endsWith('.xls')
+            ? <FileSpreadsheet size={14} className="text-emerald-600" />
+            : <FileText size={14} />}
+          <span>{fileName || 'archivo'}</span>
           <span className="text-gray-300">·</span>
           <span>{rows.length} producto{rows.length !== 1 ? 's' : ''} procesado{rows.length !== 1 ? 's' : ''}</span>
         </div>
@@ -120,20 +165,36 @@ export function BulkUpload() {
   return (
     <div className="flex flex-col items-center gap-6 w-full max-w-2xl mx-auto py-8">
       <div className="text-center space-y-2">
-        <h2 className="text-2xl font-bold text-gray-900">Carga masiva de productos</h2>
-        <p className="text-gray-500">Subí un CSV o pegá los datos directamente. Procesamos todo automáticamente.</p>
+        <h2 className="text-2xl font-bold text-gray-900">Importar productos</h2>
+        <p className="text-gray-500 text-sm max-w-md">
+          Subí tu archivo Excel o CSV con los productos. Lo procesamos automáticamente:
+          completamos los datos que faltan, detectamos errores y te mostramos todo antes de publicar.
+        </p>
       </div>
 
-      {/* Template download */}
-      <button
-        onClick={downloadCsvTemplate}
-        className="flex items-center gap-2 text-sm text-indigo-600 hover:text-indigo-800 border border-indigo-200 hover:border-indigo-400 bg-indigo-50 hover:bg-indigo-100 px-4 py-2 rounded-lg transition-all font-medium"
-      >
-        <Download size={14} />
-        Descargar plantilla CSV de ejemplo
-      </button>
+      {/* Template download buttons */}
+      <div className="flex flex-wrap gap-3 justify-center">
+        <button
+          onClick={downloadExcelTemplate}
+          className="flex items-center gap-2 text-sm text-emerald-700 hover:text-emerald-900 border border-emerald-300 hover:border-emerald-500 bg-emerald-50 hover:bg-emerald-100 px-4 py-2 rounded-lg transition-all font-medium"
+        >
+          <FileSpreadsheet size={14} />
+          Descargar plantilla Excel (.xlsx)
+        </button>
+        <button
+          onClick={downloadCsvTemplate}
+          className="flex items-center gap-2 text-sm text-indigo-600 hover:text-indigo-800 border border-indigo-200 hover:border-indigo-400 bg-indigo-50 hover:bg-indigo-100 px-4 py-2 rounded-lg transition-all font-medium"
+        >
+          <Download size={14} />
+          Descargar plantilla CSV
+        </button>
+      </div>
 
-      {/* Options */}
+      <p className="text-xs text-gray-400 -mt-3 text-center">
+        Usá la plantilla como guía. Solo son obligatorias las columnas <strong>descripcion_corta</strong> y <strong>precio</strong>.
+      </p>
+
+      {/* Skip invalid option */}
       <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
         <input
           type="checkbox"
@@ -142,7 +203,7 @@ export function BulkUpload() {
           className="rounded border-gray-300 text-indigo-600"
         />
         <SkipForward size={14} className="text-gray-400" />
-        Ignorar filas inválidas automáticamente
+        Ignorar filas con errores automáticamente
       </label>
 
       {/* Input tabs */}
@@ -164,7 +225,8 @@ export function BulkUpload() {
 
         {tab === 'upload' && (
           <div
-            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+            onDragEnter={handleDragEnter}
+            onDragOver={handleDragOver}
             onDragLeave={() => setIsDragging(false)}
             onDrop={handleDrop}
             onClick={() => fileInputRef.current?.click()}
@@ -183,14 +245,14 @@ export function BulkUpload() {
             </div>
             <div className="text-center">
               <p className="text-sm font-medium text-gray-700">
-                {isDragging ? 'Soltá el archivo aquí' : 'Arrastrá tu CSV o hacé click para seleccionar'}
+                {isDragging ? 'Soltá el archivo aquí' : 'Arrastrá tu archivo o hacé click para seleccionar'}
               </p>
-              <p className="text-xs text-gray-400 mt-1">Archivos .csv · codificación UTF-8</p>
+              <p className="text-xs text-gray-400 mt-1">Excel (.xlsx) o CSV · UTF-8</p>
             </div>
             <input
               ref={fileInputRef}
               type="file"
-              accept=".csv,text/csv"
+              accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
               className="hidden"
               onChange={handleFileInput}
             />
@@ -199,10 +261,13 @@ export function BulkUpload() {
 
         {tab === 'paste' && (
           <div className="space-y-3">
+            <p className="text-xs text-gray-500">
+              Pegá el contenido de tu planilla directamente (incluí la fila de encabezados). Columnas separadas por comas.
+            </p>
             <textarea
               value={pasteText}
               onChange={(e) => setPasteText(e.target.value)}
-              placeholder="titulo,descripcion_corta,marca,precio"
+              placeholder={`titulo,descripcion_corta,marca,precio\n"Heladera Samsung 320L","heladera samsung no frost 320 litros blanca","Samsung","250000"`}
               rows={8}
               className={cn(
                 'w-full px-4 py-3 text-sm font-mono rounded-xl border-2 border-gray-200',
@@ -231,15 +296,16 @@ export function BulkUpload() {
       {/* Column reference */}
       <details className="w-full text-sm">
         <summary className="cursor-pointer text-gray-500 hover:text-gray-700 font-medium select-none">
-          Ver columnas disponibles
+          Ver todas las columnas disponibles
         </summary>
         <div className="mt-3 overflow-x-auto rounded-xl border border-gray-200">
           <table className="w-full text-xs">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-3 py-2 text-left font-semibold text-gray-600">Columna</th>
-                <th className="px-3 py-2 text-left font-semibold text-gray-600">Requerida</th>
+                <th className="px-3 py-2 text-left font-semibold text-gray-600">Obligatoria</th>
                 <th className="px-3 py-2 text-left font-semibold text-gray-600">Ejemplo</th>
+                <th className="px-3 py-2 text-left font-semibold text-gray-600 hidden sm:table-cell">Descripción</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -247,7 +313,8 @@ export function BulkUpload() {
                 <tr key={col.key} className="hover:bg-gray-50">
                   <td className="px-3 py-2 font-mono text-indigo-700">{col.header}</td>
                   <td className="px-3 py-2">{col.required ? <span className="text-red-500 font-semibold">Sí</span> : <span className="text-gray-400">No</span>}</td>
-                  <td className="px-3 py-2 text-gray-500 truncate max-w-[180px]">{col.example || '—'}</td>
+                  <td className="px-3 py-2 text-gray-500 truncate max-w-[140px]">{col.example || '—'}</td>
+                  <td className="px-3 py-2 text-gray-400 hidden sm:table-cell max-w-[220px] truncate" title={col.hint}>{col.hint}</td>
                 </tr>
               ))}
             </tbody>

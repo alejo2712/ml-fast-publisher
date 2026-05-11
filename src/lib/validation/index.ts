@@ -139,14 +139,32 @@ export function validateDraft(draft: ProductDraft): ValidationResult {
     }
   }
 
-  const isReady = missingFields.length === 0 && fieldErrors.length === 0;
+  // Deduplicate fieldErrors by id (same field can be caught by multiple checks)
+  const seenErrors = new Set<string>();
+  const uniqueErrors = fieldErrors.filter((e) => {
+    if (seenErrors.has(e.id)) return false;
+    seenErrors.add(e.id);
+    return true;
+  });
+
+  // Deduplicate missingFields by id, and exclude any field already in fieldErrors
+  // (a field with a garbage value goes to fieldErrors — it must not also appear as missing)
+  const errorIdSet = new Set(uniqueErrors.map((e) => e.id));
+  const seenMissing = new Set<string>();
+  const uniqueMissing = missingFields.filter((f) => {
+    if (errorIdSet.has(f.id) || seenMissing.has(f.id)) return false;
+    seenMissing.add(f.id);
+    return true;
+  });
+
+  const isReady = uniqueMissing.length === 0 && uniqueErrors.length === 0;
   const status: ValidationResult['status'] = isReady
     ? 'ready'
-    : fieldErrors.length > 0
+    : uniqueErrors.length > 0
     ? 'invalid'
     : 'missing';
 
-  return { missingFields, fieldErrors, isReady, status };
+  return { missingFields: uniqueMissing, fieldErrors: uniqueErrors, isReady, status };
 }
 
 // Backwards-compatible alias used by csv/parser
