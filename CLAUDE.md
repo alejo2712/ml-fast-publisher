@@ -373,6 +373,16 @@ npm run dev
 - Confirmation modal before delete
 - After disconnect: status refetched, readiness result cleared
 
+### Session 11 additions (bulk import + bug fixes)
+- [x] Bug fix: validateDraft deduplicates missingFields + fieldErrors by id; a field now appears in at most one list
+- [x] Bug fix: MissingFields component — missing section skips ids already rendered in fieldErrors section
+- [x] Bug fix: ImageUploader — added onDragEnter + preventDefault for reliable drop in Firefox/Safari
+- [x] xlsx package installed — Excel import support
+- [x] csv/template.ts: added product_type, capacidad_kg, potencia_watts, envio, retiro_en_persona, envio_gratis, imagenes columns; downloadExcelTemplate() with instructions sheet
+- [x] csv/parser.ts: LEGACY_HEADERS aliases (imagen_url→imagenes, capacidad→capacidad_litros, watts→potencia_watts); shipping overrides; capacity_kg fallback; parseXlsxBuffer() using dynamic import
+- [x] BulkUpload: accepts .xlsx/.xls + .csv; drag-drop fixed with onDragEnter; Excel download button; UX copy improved for non-technical users; hint column in reference table
+- [x] Build passing (31 routes, 0 TypeScript errors)
+
 ## Next Session Instructions
 1. **Deploy to Vercel**: follow docs/deployment/vercel.md — create Neon DB, set all env vars, run prisma db push against production DB, verify /api/health returns ok
 2. **Live OAuth validation**: connect real ML sandbox credentials → verify DB row → test dry-run → test preflight → verify disconnect clears DB row
