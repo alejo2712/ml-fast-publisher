@@ -422,14 +422,106 @@ npm run dev
 - mlResponse stored in DB for both success (item id, permalink, status) and failure (ML error body)
 - MLApiError parses ML error body → human-readable message with cause array
 
+### Session 14 additions (bulk publish + OAuth fixes)
+- [x] OAuth callback: refreshToken made nullable end-to-end (schema String? + MLTokens type + auth.ts + callback upsert + publish route)
+- [x] refreshAccessToken: throws clear error when refreshToken is null instead of silently passing undefined
+- [x] Callback upsert: on update, only overwrites refreshToken when new ML response includes one (preserves existing value otherwise)
+- [x] Removed hardcoded 1-item real publish limit from publishBulkItems() and /api/ml/publish route
+- [x] Route restructured to per-item loop: payload validation → image prep → preflight → publish → history (each item independent)
+- [x] MLPublishResult.status gains preflight_failed and skipped_invalid
+- [x] BulkResults: real-mode confirmation modal with warning banner + required checkbox + row count breakdown
+- [x] BulkResults: post-publish summary panel (published/failed/preflight_failed/skipped)
+- [x] BulkResults: row icons for preflight_failed (ShieldOff) and skipped_invalid (SkipForward)
+- [x] BulkResults: graceful handling of non-2xx API responses and JSON parse failures
+- [x] Build passing (33 routes, 0 TypeScript errors)
+
+### Session 14 — Real publish result (production test)
+First real bulk publish attempt with MERCADOLIBRE_DRY_RUN=false:
+- totalPublished: 0, totalFailed: 8, totalSkipped: 1, dryRun: false
+- Root cause: hardcoded category IDs are wrong/non-leaf; attribute mapping is incorrect for ML real API
+- See full error analysis: docs/mercadolibre-real-publish-errors.md
+
+## NEXT PRIORITY — Real ML Category/Attribute Compatibility
+**Status: planned, not yet implemented. Do not start without explicit instruction.**
+
+Real Mercado Libre publishing fails because our hardcoded category IDs and attribute mappings
+do not match what ML's real API requires. This is the main blocker for production publishing.
+
+### A. Dynamic category resolution
+- Remove hardcoded category IDs (MLA1577, MLA1574, etc.) — they are wrong or non-leaf
+- Use ML category prediction API: `GET /sites/MLA/domain_discovery/search?q={title}`
+- Validate resolved category: must be leaf + must support marketplace (not classified) listing
+- Allow optional `oficial_category_id` column in CSV to override prediction
+- Cache resolved categories to avoid redundant API calls within a bulk run
+
+### B. Category attributes fetcher
+- For each resolved category: `GET /categories/{id}/attributes`
+- Fetch required + conditionally-required attributes
+- Build attribute list dynamically from ML response
+- Cache per category ID (attributes change rarely)
+
+### C. Attribute mapping refactor
+- Replace generic `CAPACITY` with category-specific attribute IDs:
+  - Heladeras/Freezers: `CAPACITY` in liters (check ML accepted unit)
+  - Lavarropas: `CAPACITY` in kg — verify correct ML attribute ID
+  - Microondas: `CAPACITY` in liters
+- Add missing ML attributes:
+  - `GTIN` (required by some categories, e.g. MLA1577)
+  - `MANUFACTURER` / "Fabricante"
+  - `POWER_SUPPLY_TYPE` / "Tipo de alimentación"
+  - `HEIGHT`, `WIDTH`, `DEPTH` in cm
+  - `REQUIRES_ASSEMBLY` (boolean)
+  - `INCLUDES_ASSEMBLY_MANUAL` (boolean)
+- Never send attributes the category does not support
+- Only send attribute value_id when ML requires controlled vocab; use value_name otherwise
+
+### D. Excel/CSV template update
+New columns to add to CSV_COLUMNS in src/lib/csv/template.ts:
+- `gtin` (codigo_gtin)
+- `manufacturer` (fabricante)
+- `power_supply_type` (tipo_alimentacion) — e.g. "220V", "Batería", "USB"
+- `height_cm` (alto_cm)
+- `width_cm` (ancho_cm)
+- `depth_cm` (profundidad_cm)
+- `requires_assembly` (requiere_armado) — si/no
+- `includes_assembly_manual` (incluye_manual_armado) — si/no
+- `official_category_id` (categoria_ml) — optional override, skips prediction
+
+### E. Preflight improvements
+Before sending POST /items:
+- Call ML category attributes endpoint for the resolved category
+- Validate all required attributes are present in the payload
+- Validate all conditionally-required attributes (based on other field values)
+- Validate attribute IDs exist in the category (reject unknown attribute IDs)
+- Validate shipping mode is supported for user + category
+- Return per-attribute validation errors in preflight result
+
+### F. UI improvements
+- Per-row: show resolved ML category name + ID (not just our internal applianceType)
+- Per-row: show which required ML attributes are missing (before publish attempt)
+- Inline edit panel: add fields for new columns (GTIN, dimensions, etc.)
+- Category badge: green = valid leaf, orange = non-leaf, red = not found
+
+### G. Shipping safety
+- Replace hardcoded `me2` default with detection of allowed modes per category/user
+- API: `GET /users/{user_id}/shipping_modes` (requires OAuth token)
+- Safe fallback: `not_specified` if allowed modes cannot be determined
+- Surface ML shipping validation errors in preflight
+
+### H. Implementation order (when ready to build)
+1. Dynamic category resolution (A) — unblocks everything else
+2. Category attributes fetcher (B) + cache layer
+3. Attribute mapping refactor (C) — fix existing payload builder
+4. Preflight ML attribute validation (E) — surface errors before /items call
+5. CSV template + parser update (D)
+6. UI improvements (F, G)
+
 ## Next Session Instructions
-1. **First real publish**: use HTTPS image URLs (e.g. from Cloudinary/Imgur) → single product flow → verify in ML seller dashboard → check /history for mlItemId + permalink
-2. **Set MERCADOLIBRE_DRY_RUN=false in Vercel** when ready: `echo "false" | vercel env add MERCADOLIBRE_DRY_RUN production` then `vercel --prod`
-3. **Verify ML OAuth redirect URI**: must be `https://ml-fast-publisher.vercel.app/api/ml/callback` in ML developer console
-4. **Run manual test plan section 20** to verify bulk import end-to-end in the browser
-5. Add additional categories: mobile phones, mattresses (follow pattern in `src/config/categories/appliances.ts`)
-6. Persist bulk CSV results to `BulkUpload` DB table for history/audit
-7. For real ML publishing with uploaded images: add ML CDN image upload step before publish (POST /pictures, get secure_url, replace local paths)
+1. **PRIORITY 1**: Implement ML category/attribute compatibility — start with (A) dynamic category resolution, then (B) attributes fetcher, then (C) mapping refactor. See plan above and docs/mercadolibre-real-publish-errors.md for concrete ML error examples.
+2. **Run manual test plan section 20** to verify bulk import end-to-end in the browser (dry-run is fine)
+3. Add additional categories: mobile phones, mattresses (follow pattern in `src/config/categories/appliances.ts`)
+4. Persist bulk CSV results to `BulkUpload` DB table for history/audit
+5. For real ML publishing with uploaded images: add ML CDN image upload step before publish (POST /pictures, get secure_url, replace local paths)
 
 ## WARNINGS — Read Before Enabling Real Publishing
 - `MERCADOLIBRE_DRY_RUN` defaults to `true` — no real publish without explicit opt-in
