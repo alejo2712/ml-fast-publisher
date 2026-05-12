@@ -70,3 +70,20 @@ export function getCriticalAttributes(attrs: MLAttributeDefinition[]): MLAttribu
     (a) => a.tags?.required === true || a.tags?.conditionally_required === true
   );
 }
+
+/**
+ * Returns critical attributes whose ID is not present in `sentAttributeIds`.
+ * Used to detect what was missing from the payload after enrichment + defaults.
+ */
+export function getMissingCriticalAttributes(
+  categoryAttrs: MLAttributeDefinition[],
+  sentAttributeIds: Set<string>
+): Array<{ id: string; name: string; conditionalRequired: boolean }> {
+  return getCriticalAttributes(categoryAttrs)
+    .filter((a) => !sentAttributeIds.has(a.id))
+    .map((a) => ({
+      id: a.id,
+      name: a.name,
+      conditionalRequired: a.tags?.conditionally_required === true && a.tags?.required !== true,
+    }));
+}

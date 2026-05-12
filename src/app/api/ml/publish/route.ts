@@ -15,7 +15,8 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { getCredentials, refreshAccessToken } from '@/lib/mercadolibre/auth';
 import { publishSingleItem, isDryRun } from '@/lib/mercadolibre/publish';
 import { runPreflight } from '@/lib/mercadolibre/preflight';
-import { enrichPayload } from '@/lib/mercadolibre/payload-enricher';
+import { enrichPayload, type MissingAttr } from '@/lib/mercadolibre/payload-enricher';
+import { logger } from '@/lib/logger';
 import { prepareImages } from '@/lib/images/prepare-images';
 import { getDeploymentEnvironment } from '@/lib/env/runtime';
 import { auth } from '@/auth';
@@ -199,8 +200,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 4. Enrich payload — resolve dynamic ML category + filter attributes (real mode only)
-    let enrichmentWarnings: string[] = [];
+    // 4. Enrich payload — resolve dynamic ML category + filter/fill attributes (real mode only)
+    let missingAttrs: MissingAttr[] = [];
     if (!dryRun) {
       const enriched = await enrichPayload(
         item.payload,
@@ -209,7 +210,35 @@ export async function POST(request: NextRequest) {
         accessToken
       );
       item.payload = enriched.payload;
-      enrichmentWarnings = enriched.warnings;
+      missingAttrs = enriched.missingRequired;
+
+      // Block publish if non-conditional required attributes are still missing after defaults
+      if (enriched.hasBlockingMissing) {
+        const blocking = enriched.missingRequired.filter((m) => !m.conditionalRequired);
+        const msg = `Atributos ML obligatorios faltantes: ${blocking.map((m) => `${m.id} (${m.name})`).join(', ')}`;
+        logger.warn('publish', msg);
+        const result: MLPublishResult = {
+          rowIndex,
+          status: 'preflight_failed',
+          message: msg,
+          missingAttributes: enriched.missingRequired,
+        };
+        results.push(result);
+        if (userId) {
+          prisma.publishHistory.create({
+            data: {
+              userId, draftId: draftId ?? null,
+              status: 'PREFLIGHT_FAILED', dryRun: false,
+              payload: item.payload as object,
+              errorMessage: msg,
+              preflightResult: preflightResult ? (preflightResult as object) : undefined,
+              imagePrepResult: imgPrep as object,
+              environment,
+            },
+          }).catch(() => {});
+        }
+        continue;
+      }
     }
 
     // 5. Publish
@@ -217,7 +246,12 @@ export async function POST(request: NextRequest) {
     const result = await publishSingleItem(item.payload, accessToken);
     const durationMs = Date.now() - itemStart;
 
-    results.push({ ...result, rowIndex });
+    results.push({
+      ...result,
+      rowIndex,
+      // Include any conditional-required attrs that are still missing (informational — didn't block)
+      ...(missingAttrs.length > 0 ? { missingAttributes: missingAttrs } : {}),
+    });
 
     // Respect ML rate limits between real publishes
     if (!dryRun) await new Promise((r) => setTimeout(r, 100));

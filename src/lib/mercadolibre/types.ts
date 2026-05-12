@@ -23,6 +23,8 @@ export interface MLPublishResult {
   payload?: MLPayload;
   /** Raw ML API response body — present for both success and failure in real mode */
   mlResponse?: unknown;
+  /** ML attributes that were still missing after applying defaults (conditional-required) */
+  missingAttributes?: Array<{ id: string; name: string; conditionalRequired: boolean }>;
 }
 
 /** Structured ML API error — parsed from ML's error response body */
@@ -32,7 +34,9 @@ export interface MLApiErrorBody {
   status?: number;
   cause?: Array<{
     code?: number;
+    /** Human-readable reason (ML uses both "description" and "message" depending on version) */
     description?: string;
+    message?: string;
     /** e.g. "error" | "warning" */
     type?: string;
     department?: string;

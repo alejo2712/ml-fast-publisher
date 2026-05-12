@@ -25,6 +25,8 @@ interface RowPublishState {
   itemId?: string;
   /** Raw ML API response — present for real publishes (success + failure) */
   mlResponse?: unknown;
+  /** ML attributes still missing after enrichment + defaults */
+  missingAttributes?: Array<{ id: string; name: string; conditionalRequired: boolean }>;
 }
 
 // ─── Inline edit cell ────────────────────────────────────────────────────────
@@ -218,7 +220,9 @@ function EditPanel({ row, onEdit }: EditPanelProps) {
 
 interface MLCause {
   code?: number;
+  /** ML v1 uses "description"; ML v2+ uses "message" */
   description?: string;
+  message?: string;
   type?: string;
   department?: string;
 }
@@ -229,30 +233,44 @@ function MLCauseList({ mlResponse }: { mlResponse: unknown }) {
   const causes = body.cause as MLCause[] | undefined;
   if (!causes || causes.length === 0) return null;
 
+  // Top-level error code (e.g. "item.attribute.missing_conditional_required")
+  const errorCode = body.error as string | undefined;
+
   return (
     <div className="space-y-1.5">
-      <p className="text-xs font-semibold text-red-700 uppercase tracking-wide">
-        Causas del error (Mercado Libre)
-      </p>
+      <div className="flex items-center gap-2">
+        <p className="text-xs font-semibold text-red-700 uppercase tracking-wide">
+          Causas del error (Mercado Libre)
+        </p>
+        {errorCode && (
+          <span className="text-xs font-mono text-red-500 bg-red-50 border border-red-200 rounded px-1.5 py-0.5">
+            {errorCode}
+          </span>
+        )}
+      </div>
       <div className="space-y-1.5">
-        {causes.map((c, i) => (
-          <div key={i} className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs space-y-0.5">
-            {c.description && (
-              <p className="text-red-800 font-medium">{c.description}</p>
-            )}
-            <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-red-500">
-              {c.code !== undefined && (
-                <span><span className="text-red-400">Código:</span> {c.code}</span>
+        {causes.map((c, i) => {
+          // ML uses either "message" or "description" depending on API version
+          const text = c.message ?? c.description;
+          return (
+            <div key={i} className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs space-y-0.5">
+              {text && (
+                <p className="text-red-800 font-medium leading-relaxed">{text}</p>
               )}
-              {c.type && (
-                <span><span className="text-red-400">Tipo:</span> {c.type}</span>
-              )}
-              {c.department && (
-                <span><span className="text-red-400">Área:</span> {c.department}</span>
-              )}
+              <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-red-500">
+                {c.code !== undefined && (
+                  <span><span className="text-red-400">Código:</span> {c.code}</span>
+                )}
+                {c.type && (
+                  <span><span className="text-red-400">Tipo:</span> {c.type}</span>
+                )}
+                {c.department && (
+                  <span><span className="text-red-400">Área:</span> {c.department}</span>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -323,9 +341,43 @@ function RowDetail({ row, publishState }: RowDetailProps) {
         </div>
       )}
 
-      {/* ML error causes — shown first for failed rows */}
-      {publishState?.status === 'failed' && hasMlResponse && (
+      {/* ML error causes — shown for failed rows */}
+      {(publishState?.status === 'failed' || publishState?.status === 'preflight_failed') && hasMlResponse && (
         <MLCauseList mlResponse={publishState.mlResponse} />
+      )}
+
+      {/* Missing ML attributes — shown when enrichment detected gaps */}
+      {publishState?.missingAttributes && publishState.missingAttributes.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-xs font-semibold text-orange-700 uppercase tracking-wide">
+            Atributos ML faltantes
+          </p>
+          <div className="space-y-1">
+            {publishState.missingAttributes.map((attr) => (
+              <div
+                key={attr.id}
+                className={cn(
+                  'flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs',
+                  attr.conditionalRequired
+                    ? 'bg-amber-50 border border-amber-200 text-amber-800'
+                    : 'bg-red-50 border border-red-200 text-red-800'
+                )}
+              >
+                <span className="font-mono font-semibold shrink-0">{attr.id}</span>
+                <span className="text-gray-500">·</span>
+                <span>{attr.name}</span>
+                <span className={cn(
+                  'ml-auto shrink-0 text-[10px] rounded px-1.5 py-0.5 font-medium',
+                  attr.conditionalRequired
+                    ? 'bg-amber-100 text-amber-700'
+                    : 'bg-red-100 text-red-700'
+                )}>
+                  {attr.conditionalRequired ? 'condicional' : 'obligatorio'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* Expandable sections */}
@@ -500,6 +552,7 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
           permalink: r.permalink,
           itemId: r.itemId,
           mlResponse: r.mlResponse,
+          missingAttributes: r.missingAttributes,
         });
       });
       setPublishStates(newStates);
