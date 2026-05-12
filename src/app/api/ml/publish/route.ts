@@ -5,9 +5,12 @@
  *
  * Per-item flow (real mode):
  *   1. Payload validation  → skipped_invalid if fails
- *   2. Image preparation   → skipped_invalid if blocks real publish
- *   3. Preflight check     → preflight_failed if any error check fails
- *   4. Publish to ML       → published | failed
+ *   2. ML CDN upload       → local /uploads/ or HTTPS images uploaded to ML CDN (non-blocking)
+ *   3. Image preparation   → skipped_invalid if blocks real publish
+ *   4. Preflight check     → preflight_failed if any error check fails
+ *   5. Enrich payload      → dynamic category + attribute mapping
+ *   6. Publish to ML       → published | failed
+ *   7. Post-publish verify → GET /items/{id} to detect early rejection
  *
  * Failures do NOT abort the remaining items — each item is independent.
  */
@@ -16,6 +19,7 @@ import { getCredentials, refreshAccessToken } from '@/lib/mercadolibre/auth';
 import { publishSingleItem, verifyPublishedItem, isDryRun } from '@/lib/mercadolibre/publish';
 import { runPreflight } from '@/lib/mercadolibre/preflight';
 import { enrichPayload, type MissingAttr } from '@/lib/mercadolibre/payload-enricher';
+import { uploadPicturesToML } from '@/lib/mercadolibre/upload-pictures';
 import { logger } from '@/lib/logger';
 import { prepareImages } from '@/lib/images/prepare-images';
 import { getDeploymentEnvironment } from '@/lib/env/runtime';
@@ -138,7 +142,31 @@ export async function POST(request: NextRequest) {
       continue;
     }
 
-    // 2. Image preparation
+    // 2. ML CDN upload — upload local or HTTPS images to ML CDN before preparation
+    // This allows /uploads/ local files and plain HTTPS URLs to become ML-hosted
+    // before the image preparation check runs. Non-blocking: failures are logged but
+    // do not skip the item (prepare-images will catch any remaining unpublishable refs).
+    if (!dryRun) {
+      const pictureSources = (item.payload.pictures ?? []).map((p) => p.source);
+      if (pictureSources.length > 0) {
+        const { replacements, failures } = await uploadPicturesToML(pictureSources, accessToken);
+        if (replacements.size > 0) {
+          item.payload = {
+            ...item.payload,
+            pictures: item.payload.pictures.map((p) => ({
+              source: replacements.get(p.source) ?? p.source,
+            })),
+          };
+        }
+        if (failures.length > 0) {
+          logger.warn('publish', `${failures.length} imagen(es) no se pudieron subir al CDN de ML`, {
+            failures: failures.map((f) => f.error),
+          });
+        }
+      }
+    }
+
+    // 3. Image preparation
     const rawPaths = (item.payload.pictures ?? []).map((p) => p.source);
     const imgPrep = prepareImages(rawPaths, dryRun);
 
@@ -171,7 +199,7 @@ export async function POST(request: NextRequest) {
       pictures: imgPrep.prepared.map((p) => ({ source: p.source })),
     };
 
-    // 3. Preflight (real mode only) — skip item if any blocking check fails
+    // 4. Preflight (real mode only) — skip item if any blocking check fails
     if (!dryRun && userId) {
       preflightResult = await runPreflight(userId, item.payload);
       if (!preflightResult.ready) {
@@ -202,7 +230,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 4. Enrich payload — resolve dynamic ML category + filter/fill attributes (real mode only)
+    // 5. Enrich payload — resolve dynamic ML category + filter/fill attributes (real mode only)
     let missingAttrs: MissingAttr[] = [];
     if (!dryRun) {
       const enriched = await enrichPayload(
@@ -249,12 +277,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 5. Publish
+    // 6. Publish
     const itemStart = Date.now();
     const result = await publishSingleItem(item.payload, accessToken);
     const durationMs = Date.now() - itemStart;
 
-    // 6. Post-publish verification — GET /items/{id} to detect early rejection/reclassification
+    // 7. Post-publish verification — GET /items/{id} to detect early rejection/reclassification
     let mlItemVerification = null;
     if (!dryRun && result.status === 'published' && result.itemId) {
       // Brief pause so ML has time to process the item before we query its state
