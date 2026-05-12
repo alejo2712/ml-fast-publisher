@@ -555,6 +555,7 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
         payload: r.payload!,
         rowIndex: r.rowIndex,
         officialCategoryId: r.draft?.officialCategoryId,
+        productType: r.draft?.applianceType,
       }));
       const res = await fetch('/api/ml/publish', {
         method: 'POST',

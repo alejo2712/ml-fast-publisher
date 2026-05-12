@@ -12,7 +12,7 @@
  */
 
 import type { MLPayload } from '@/types';
-import { resolveCategory, validateCategoryId, type MLCategoryResolution } from './category-resolver';
+import { resolveCategory, validateCategoryId, isCategoryCompatibleWithProductType, type MLCategoryResolution } from './category-resolver';
 import { getCategoryAttributes, getAttributeIds, getMissingCriticalAttributes } from './category-attributes';
 import { buildDefaultAttribute } from './attribute-defaults';
 import { logger } from '@/lib/logger';
@@ -31,6 +31,8 @@ export interface EnrichmentResult {
   missingRequired: MissingAttr[];
   /** True when there are still non-conditional required attrs missing (should block publish) */
   hasBlockingMissing: boolean;
+  /** Set when the resolved category is incompatible with the declared product type */
+  categoryIncompatibilityReason?: string;
 }
 
 /**
@@ -40,15 +42,18 @@ export interface EnrichmentResult {
  * @param title               Product title — used for ML category prediction
  * @param officialCategoryId  User-provided override (skips prediction when present)
  * @param accessToken         Valid ML OAuth access token
+ * @param productType         Appliance type (e.g. "microwave") — used to validate category compatibility
  */
 export async function enrichPayload(
   payload: MLPayload,
   title: string,
   officialCategoryId: string | undefined,
-  accessToken: string
+  accessToken: string,
+  productType?: string
 ): Promise<EnrichmentResult> {
   const warnings: string[] = [];
   let resolution: MLCategoryResolution | null = null;
+  let categoryIncompatibilityReason: string | undefined;
 
   // ── 1. Resolve category ───────────────────────────────────────────────────
   if (officialCategoryId) {
@@ -67,8 +72,19 @@ export async function enrichPayload(
       );
     }
   } else {
-    resolution = await resolveCategory(title, accessToken);
-    if (!resolution) {
+    // Pass productType so resolveCategory can retry with a type-specific query when needed
+    resolution = await resolveCategory(title, accessToken, productType);
+
+    // resolveCategory may return a resolution flagged as incompatible (both title + retry failed)
+    const flagged = resolution as (MLCategoryResolution & { _incompatible?: boolean; _incompatibilityReason?: string }) | null;
+    if (flagged?._incompatible) {
+      categoryIncompatibilityReason = flagged._incompatibilityReason;
+      warnings.push(
+        `CATEGORÍA INCOMPATIBLE: ${categoryIncompatibilityReason} — La publicación se bloqueará para evitar publicar en la categoría incorrecta. Usá la columna categoria_ml para especificar el ID correcto.`
+      );
+      // Treat as unresolved — don't override the payload's category_id with a wrong one
+      resolution = null;
+    } else if (!resolution) {
       warnings.push(
         `No se pudo predecir la categoría ML para "${title.slice(0, 40)}...". Se usará category_id del payload.`
       );
@@ -80,6 +96,16 @@ export async function enrichPayload(
       warnings.push(
         `Categoría predicha "${resolution.categoryName}" solo acepta clasificados. Se intentará de todas formas.`
       );
+    } else if (productType) {
+      // Even if resolveCategory returned a result without flagging it, double-check compatibility
+      const { compatible, reason } = isCategoryCompatibleWithProductType(resolution, productType);
+      if (!compatible) {
+        categoryIncompatibilityReason = reason;
+        warnings.push(
+          `CATEGORÍA INCOMPATIBLE: ${reason} — Usá la columna categoria_ml para especificar el ID correcto.`
+        );
+        resolution = null;
+      }
     }
   }
 
@@ -102,7 +128,7 @@ export async function enrichPayload(
       `No se pudieron obtener los atributos de la categoría ${resolvedCategoryId}. Los atributos del payload no se filtrarán.`
     );
     logger.warn('publish', `Could not fetch category attributes`, { categoryId: resolvedCategoryId });
-    return { payload: enrichedPayload, resolution, warnings, missingRequired: [], hasBlockingMissing: false };
+    return { payload: enrichedPayload, resolution, warnings, missingRequired: [], hasBlockingMissing: !!categoryIncompatibilityReason, categoryIncompatibilityReason };
   }
 
   const supportedIds = getAttributeIds(categoryAttrs);
@@ -187,5 +213,5 @@ export async function enrichPayload(
     hasBlockingMissing,
   });
 
-  return { payload: enrichedPayload, resolution, warnings, missingRequired: stillMissing, hasBlockingMissing };
+  return { payload: enrichedPayload, resolution, warnings, missingRequired: stillMissing, hasBlockingMissing: hasBlockingMissing || !!categoryIncompatibilityReason, categoryIncompatibilityReason };
 }

@@ -170,6 +170,9 @@ model PublishHistory {
   preflightResult Json?         @map("preflight_result")   // structured PreflightResult from /api/ml/preflight
   imagePrepResult Json?         @map("image_prep_result")  // ImagePreparationResult from prepareImages
   mlResponse      Json?         @map("ml_response")        // raw ML API response (success or error body)
+  mlItemStatus    String?       @map("ml_item_status")      // status from GET /items/{id} after publish
+  mlItemSubStatus String?       @map("ml_item_sub_status")  // JSON array of sub_status codes
+  mlItemCategoryId String?      @map("ml_item_category_id") // category ML actually stored the item in
   environment     String?       // "local" | "preview" | "production"
   durationMs      Int?          @map("duration_ms")         // publish round-trip duration
   createdAt       DateTime      @default(now()) @map("created_at")

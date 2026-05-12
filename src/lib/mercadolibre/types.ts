@@ -14,6 +14,16 @@ export interface MLTokens {
   userId: string;
 }
 
+export interface MLItemVerification {
+  /** Item status as returned by GET /items/{id} — e.g. "active", "under_review", "closed", "paused" */
+  status: string;
+  /** Sub-status codes ML applies — e.g. ["deleted", "out_of_stock"] */
+  subStatus: string[];
+  /** Category ML actually stored the item under (may differ from what we sent) */
+  categoryId: string | null;
+  verified: boolean;
+}
+
 export interface MLPublishResult {
   rowIndex?: number;
   status: 'published' | 'dry_run' | 'failed' | 'skipped' | 'preflight_failed' | 'skipped_invalid';
@@ -25,6 +35,8 @@ export interface MLPublishResult {
   mlResponse?: unknown;
   /** ML attributes that were still missing after applying defaults (conditional-required) */
   missingAttributes?: Array<{ id: string; name: string; conditionalRequired: boolean }>;
+  /** Post-publish verification via GET /items/{id} — checks if ML accepted/rejected/reclassified */
+  mlItemVerification?: MLItemVerification;
 }
 
 /** Structured ML API error — parsed from ML's error response body */
