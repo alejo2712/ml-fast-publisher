@@ -441,11 +441,24 @@ First real bulk publish attempt with MERCADOLIBRE_DRY_RUN=false:
 - Root cause: hardcoded category IDs are wrong/non-leaf; attribute mapping is incorrect for ML real API
 - See full error analysis: docs/mercadolibre-real-publish-errors.md
 
+## Session 15 additions (ML category/attribute compatibility — A, B, C, D, E)
+- [x] src/lib/mercadolibre/category-resolver.ts — resolveCategory() via domain_discovery API; validateCategoryId(); in-process cache; validates leaf + marketplace support
+- [x] src/lib/mercadolibre/category-attributes.ts — getCategoryAttributes() per category ID; getAttributeIds(); getRequiredAttributes(); in-process cache
+- [x] src/lib/mercadolibre/payload-enricher.ts — enrichPayload() called before real publish; overrides category_id; strips attributes not supported by resolved category; officialCategoryId override support
+- [x] /api/ml/publish: enrichment step added between preflight and publishSingleItem (real mode only); PublishRequestItem.officialCategoryId
+- [x] preflight.ts: category_resolution check added (check 7, real mode only) — resolves from title, warns if non-leaf or classified
+- [x] src/types/index.ts: ProductDraft gains gtin, manufacturer, powerSupplyType, requiresAssembly, includesAssemblyManual, officialCategoryId
+- [x] payload-builder: buildAttributes() adds GTIN, MANUFACTURER, POWER_SUPPLY_TYPE, REQUIRES_ASSEMBLY, INCLUDES_ASSEMBLY_MANUAL; default shipping changed from me2 to not_specified
+- [x] csv/template.ts: 7 new columns — codigo_gtin, fabricante, tipo_alimentacion, requiere_armado, incluye_manual_armado, categoria_ml
+- [x] csv/parser.ts: mapRowToOverrides parses all 7 new columns
+- [x] BulkResults: passes officialCategoryId from draft to publish request
+- [x] Build passing (33 routes, 0 TypeScript errors, 71/71 parser tests)
+
 ## NEXT PRIORITY — Real ML Category/Attribute Compatibility
-**Status: planned, not yet implemented. Do not start without explicit instruction.**
+**Status: A, B, C, D, E implemented (Session 15). F, G remain.**
 
 Real Mercado Libre publishing fails because our hardcoded category IDs and attribute mappings
-do not match what ML's real API requires. This is the main blocker for production publishing.
+do not match what ML's real API requires. The core fix is now deployed.
 
 ### A. Dynamic category resolution
 - Remove hardcoded category IDs (MLA1577, MLA1574, etc.) — they are wrong or non-leaf
@@ -517,11 +530,12 @@ Before sending POST /items:
 6. UI improvements (F, G)
 
 ## Next Session Instructions
-1. **PRIORITY 1**: Implement ML category/attribute compatibility — start with (A) dynamic category resolution, then (B) attributes fetcher, then (C) mapping refactor. See plan above and docs/mercadolibre-real-publish-errors.md for concrete ML error examples.
-2. **Run manual test plan section 20** to verify bulk import end-to-end in the browser (dry-run is fine)
-3. Add additional categories: mobile phones, mattresses (follow pattern in `src/config/categories/appliances.ts`)
-4. Persist bulk CSV results to `BulkUpload` DB table for history/audit
-5. For real ML publishing with uploaded images: add ML CDN image upload step before publish (POST /pictures, get secure_url, replace local paths)
+1. **PRIORITY 1**: Re-run real ML bulk publish with the new category resolution to verify items publish successfully. Use HTTPS image URLs. If still failing, check ML error response bodies in PublishHistory for the new error details.
+2. **UI improvements (F)**: Per-row show resolved ML category name + ID; show which required attributes are missing before publish; category badge (green=leaf, orange=non-leaf, red=not found).
+3. **Shipping safety (G)**: Add `GET /users/{user_id}/shipping_modes` call in enricher to validate me2 is allowed; fall back to not_specified if not.
+4. **Persist bulk CSV results** to `BulkUpload` DB table for history/audit.
+5. **Additional categories**: mobile phones, mattresses (follow pattern in `src/config/categories/appliances.ts`).
+6. **ML CDN image upload**: For uploaded images, call `POST /pictures` to get ML-hosted URL before publish (POST /pictures → secure_url → replace local paths).
 
 ## WARNINGS — Read Before Enabling Real Publishing
 - `MERCADOLIBRE_DRY_RUN` defaults to `true` — no real publish without explicit opt-in
