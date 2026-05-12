@@ -529,8 +529,21 @@ Before sending POST /items:
 5. CSV template + parser update (D)
 6. UI improvements (F, G)
 
+## Session 16 additions (direct-publish UX + env)
+- [x] BulkResults: real ML publish is now the primary flow — dry-run is dev-only mode
+- [x] CTA button: always indigo "Publicar N en Mercado Libre" (removed blue dry-run variant)
+- [x] Dry-run mode: shown only as amber banner when MERCADOLIBRE_DRY_RUN=true
+- [x] Confirmation modal: clean single-checkbox, removed scary red "PUBLICACIÓN REAL" banner
+- [x] Confirmation modal: ML connection status indicator ("Conectada" / "No conectada")
+- [x] Post-publish summary: simplified, "requieren corrección" label for preflight failures
+- [x] BulkUpload: "Publicar en Mercado Libre" title + 3-step flow indicator
+- [x] publish.ts: dry-run message updated to "Modo prueba activo"
+- [x] Vercel: MERCADOLIBRE_DRY_RUN=false set in production env
+- [x] Build passing (33 routes, 0 TypeScript errors, 71/71 parser tests)
+- [x] Deployed to https://ml-fast-publisher.vercel.app
+
 ## Next Session Instructions
-1. **PRIORITY 1**: Re-run real ML bulk publish with the new category resolution to verify items publish successfully. Use HTTPS image URLs. If still failing, check ML error response bodies in PublishHistory for the new error details.
+1. **PRIORITY 1**: Test real ML bulk publish with ml-real-publish-test.xlsx — verify items publish successfully. Use HTTPS image URLs. Check PublishHistory for ML error responses.
 2. **UI improvements (F)**: Per-row show resolved ML category name + ID; show which required attributes are missing before publish; category badge (green=leaf, orange=non-leaf, red=not found).
 3. **Shipping safety (G)**: Add `GET /users/{user_id}/shipping_modes` call in enricher to validate me2 is allowed; fall back to not_specified if not.
 4. **Persist bulk CSV results** to `BulkUpload` DB table for history/audit.
