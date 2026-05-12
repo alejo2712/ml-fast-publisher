@@ -236,6 +236,15 @@ function mapRowToOverrides(row: Record<string, string>): Partial<ProductDraft> {
     if (v !== undefined) overrides.includesAssemblyManual = v;
   }
 
+  const height = parseFloat(get('height'));
+  if (!isNaN(height) && height > 0) overrides.height = height;
+
+  const width = parseFloat(get('width'));
+  if (!isNaN(width) && width > 0) overrides.width = width;
+
+  const depth = parseFloat(get('depth'));
+  if (!isNaN(depth) && depth > 0) overrides.depth = depth;
+
   const officialCategoryId = get('official_category_id');
   if (officialCategoryId) overrides.officialCategoryId = officialCategoryId;
 

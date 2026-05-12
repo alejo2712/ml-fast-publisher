@@ -36,7 +36,10 @@ export const CSV_COLUMNS: CsvColumnDef[] = [
   { key: 'power_supply_type', header: 'tipo_alimentacion',       required: false, example: '220V', hint: 'Tipo de alimentación: 220V, Batería, USB, Bivolt, etc.' },
   { key: 'requires_assembly', header: 'requiere_armado',         required: false, example: 'no', hint: 'si | no — si el producto requiere armado.' },
   { key: 'includes_assembly_manual', header: 'incluye_manual_armado', required: false, example: 'si', hint: 'si | no — si incluye manual de armado.' },
-  { key: 'official_category_id', header: 'categoria_ml',         required: false, example: 'MLA1577', hint: 'ID de categoría ML exacto. Omití para dejar que el sistema lo prediga automáticamente.' },
+  { key: 'height', header: 'alto_cm',            required: false, example: '180', hint: 'Alto del producto en centímetros (sin unidad). Requerido por ML en varias categorías.' },
+  { key: 'width',  header: 'ancho_cm',           required: false, example: '55',  hint: 'Ancho del producto en centímetros (sin unidad).' },
+  { key: 'depth',  header: 'profundidad_cm',     required: false, example: '63',  hint: 'Profundidad del producto en centímetros (sin unidad).' },
+  { key: 'official_category_id', header: 'categoria_ml', required: false, example: 'MLA1577', hint: 'ID de categoría ML exacto. Omití para dejar que el sistema lo prediga automáticamente.' },
 ];
 
 export const CSV_HEADERS = CSV_COLUMNS.map((c) => c.header);

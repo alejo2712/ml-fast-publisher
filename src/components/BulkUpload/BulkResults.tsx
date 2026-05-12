@@ -218,60 +218,113 @@ function EditPanel({ row, onEdit }: EditPanelProps) {
 
 // ─── ML error cause list ─────────────────────────────────────────────────────
 
-interface MLCause {
-  code?: number;
-  /** ML v1 uses "description"; ML v2+ uses "message" */
-  description?: string;
-  message?: string;
-  type?: string;
-  department?: string;
+/** Extract ML attribute IDs from strings like "The attributes [GTIN, ENERGY_EFFICIENCY_CLASS] are required" */
+function extractAttrIds(text: string): string[] {
+  const match = text.match(/\[([A-Z0-9_,\s]+)\]/);
+  if (!match) return [];
+  return match[1].split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+/** Render a single cause item — handles nested cause arrays recursively */
+function MLCauseItem({ cause, depth = 0 }: { cause: Record<string, unknown>; depth?: number }) {
+  // Primary human-readable text — ML uses "message" OR "description" depending on API version
+  const text = (cause.message ?? cause.description ?? '') as string;
+  const causeId = (cause.id ?? cause.cause_id ?? '') as string;
+  const code = cause.code as number | undefined;
+  const type = cause.type as string | undefined;
+  const department = cause.department as string | undefined;
+  const references = cause.references as unknown[] | undefined;
+  const nested = cause.cause as Record<string, unknown>[] | undefined;
+
+  // Extract attribute IDs embedded in bracket notation
+  const embeddedAttrs = text ? extractAttrIds(text) : [];
+
+  return (
+    <div className={cn(
+      'rounded-lg border text-xs space-y-1.5 px-3 py-2',
+      depth === 0 ? 'bg-red-50 border-red-200' : 'bg-red-100/60 border-red-300 ml-3'
+    )}>
+      {/* Primary text — show even if empty to make the card visible */}
+      {text ? (
+        <p className="text-red-800 font-medium leading-relaxed break-words">{text}</p>
+      ) : causeId ? (
+        <p className="text-red-700 font-mono">{causeId}</p>
+      ) : null}
+
+      {/* Extracted attribute IDs from message brackets */}
+      {embeddedAttrs.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          <span className="text-red-400 text-[10px] uppercase tracking-wide mr-1">Falta:</span>
+          {embeddedAttrs.map((attr) => (
+            <span key={attr} className="font-mono bg-red-200 text-red-900 rounded px-1.5 py-0.5 text-[11px] font-semibold">
+              {attr}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Metadata row */}
+      <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-red-500 text-[11px]">
+        {code !== undefined && <span><span className="text-red-400">Código:</span> {code}</span>}
+        {causeId && text && <span><span className="text-red-400">ID:</span> <span className="font-mono">{causeId}</span></span>}
+        {type && <span><span className="text-red-400">Tipo:</span> {type}</span>}
+        {department && <span><span className="text-red-400">Área:</span> {department}</span>}
+        {references && references.length > 0 && (
+          <span><span className="text-red-400">Ref:</span> {JSON.stringify(references)}</span>
+        )}
+      </div>
+
+      {/* Nested cause[] */}
+      {nested && nested.length > 0 && (
+        <div className="space-y-1 pt-1">
+          {nested.map((nc, ni) => (
+            <MLCauseItem key={ni} cause={nc} depth={depth + 1} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function MLCauseList({ mlResponse }: { mlResponse: unknown }) {
   const body = mlResponse as Record<string, unknown> | null;
   if (!body || typeof body !== 'object') return null;
-  const causes = body.cause as MLCause[] | undefined;
-  if (!causes || causes.length === 0) return null;
 
-  // Top-level error code (e.g. "item.attribute.missing_conditional_required")
+  // Top-level error fields
   const errorCode = body.error as string | undefined;
+  const errorMsg  = body.message as string | undefined;
+  const causes    = body.cause as Record<string, unknown>[] | undefined;
+
+  const hasCauses = causes && causes.length > 0;
+  if (!errorCode && !errorMsg && !hasCauses) return null;
 
   return (
     <div className="space-y-1.5">
-      <div className="flex items-center gap-2">
+      {/* Header + error code */}
+      <div className="flex flex-wrap items-center gap-2">
         <p className="text-xs font-semibold text-red-700 uppercase tracking-wide">
-          Causas del error (Mercado Libre)
+          Error de Mercado Libre
         </p>
         {errorCode && (
-          <span className="text-xs font-mono text-red-500 bg-red-50 border border-red-200 rounded px-1.5 py-0.5">
+          <span className="text-xs font-mono text-red-600 bg-red-50 border border-red-200 rounded px-1.5 py-0.5 break-all">
             {errorCode}
           </span>
         )}
       </div>
-      <div className="space-y-1.5">
-        {causes.map((c, i) => {
-          // ML uses either "message" or "description" depending on API version
-          const text = c.message ?? c.description;
-          return (
-            <div key={i} className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs space-y-0.5">
-              {text && (
-                <p className="text-red-800 font-medium leading-relaxed">{text}</p>
-              )}
-              <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-red-500">
-                {c.code !== undefined && (
-                  <span><span className="text-red-400">Código:</span> {c.code}</span>
-                )}
-                {c.type && (
-                  <span><span className="text-red-400">Tipo:</span> {c.type}</span>
-                )}
-                {c.department && (
-                  <span><span className="text-red-400">Área:</span> {c.department}</span>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+
+      {/* Top-level message when there are no cause items */}
+      {errorMsg && errorMsg !== errorCode && !hasCauses && (
+        <p className="text-xs text-red-700 leading-relaxed">{errorMsg}</p>
+      )}
+
+      {/* Cause items */}
+      {hasCauses && (
+        <div className="space-y-1.5">
+          {causes.map((c, i) => (
+            <MLCauseItem key={i} cause={c} depth={0} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
