@@ -28,7 +28,7 @@ export async function publishSingleItem(
   if (isDryRun()) {
     return {
       status: 'dry_run',
-      message: 'Dry run habilitado. No se publicó ningún ítem. Configurá MERCADOLIBRE_DRY_RUN=false para publicar.',
+      message: 'Modo prueba activo. Ítem no publicado (MERCADOLIBRE_DRY_RUN=true). Configurá MERCADOLIBRE_DRY_RUN=false para publicar en Mercado Libre.',
       payload,
     };
   }

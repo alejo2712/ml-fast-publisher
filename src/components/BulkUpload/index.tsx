@@ -165,11 +165,18 @@ export function BulkUpload() {
   return (
     <div className="flex flex-col items-center gap-6 w-full max-w-2xl mx-auto py-8">
       <div className="text-center space-y-2">
-        <h2 className="text-2xl font-bold text-gray-900">Importar productos</h2>
+        <h2 className="text-2xl font-bold text-gray-900">Publicar en Mercado Libre</h2>
         <p className="text-gray-500 text-sm max-w-md">
-          Subí tu archivo Excel o CSV con los productos. Lo procesamos automáticamente:
-          completamos los datos que faltan, detectamos errores y te mostramos todo antes de publicar.
+          Subí tu Excel con los productos, corregí los errores que aparezcan y publicá
+          directamente en Mercado Libre con un click.
         </p>
+        <div className="flex items-center justify-center gap-2 text-xs text-gray-400 pt-1">
+          <span className="bg-gray-100 rounded-full px-2.5 py-0.5">1. Subí tu Excel</span>
+          <span>→</span>
+          <span className="bg-gray-100 rounded-full px-2.5 py-0.5">2. Corregí errores</span>
+          <span>→</span>
+          <span className="bg-indigo-50 text-indigo-600 rounded-full px-2.5 py-0.5 font-medium">3. Publicá en ML</span>
+        </div>
       </div>
 
       {/* Template download buttons */}
