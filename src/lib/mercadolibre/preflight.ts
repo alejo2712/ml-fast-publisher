@@ -10,6 +10,7 @@
 
 import { getCredentials, getStoredTokens, storeTokens } from './auth';
 import { isDryRun } from './publish';
+import { resolveCategory } from './category-resolver';
 import { prepareImages } from '@/lib/images/prepare-images';
 import { prisma } from '@/lib/db';
 import type { MLPayload } from '@/types';
@@ -151,7 +152,42 @@ export async function runPreflight(
       : `Problemas: ${payloadErrors.join('; ')}`,
   });
 
-  // ── 7. Images publishable ─────────────────────────────────────────────────
+  // ── 7. Category resolution (real mode only) ───────────────────────────────
+  if (!dryRun && tokens) {
+    // Only run in real mode — avoids extra API calls during dry-run checks
+    const resolution = await resolveCategory(payload.title, tokens.accessToken).catch(() => null);
+    if (!resolution) {
+      checks.push({
+        id: 'category_resolution',
+        label: 'Categoría ML (resolución dinámica)',
+        status: 'warning',
+        detail: `No se pudo predecir la categoría ML para "${payload.title?.slice(0, 40)}". Se usará la del payload. Puede causar errores.`,
+      });
+    } else if (!resolution.isLeaf) {
+      checks.push({
+        id: 'category_resolution',
+        label: 'Categoría ML (resolución dinámica)',
+        status: 'warning',
+        detail: `Categoría predicha "${resolution.categoryName}" (${resolution.categoryId}) puede no ser hoja — ML requiere categorías hoja.`,
+      });
+    } else if (!resolution.supportsMarketplace) {
+      checks.push({
+        id: 'category_resolution',
+        label: 'Categoría ML (resolución dinámica)',
+        status: 'error',
+        detail: `Categoría "${resolution.categoryName}" solo acepta avisos clasificados (sin precio). No se puede publicar en modo marketplace.`,
+      });
+    } else {
+      checks.push({
+        id: 'category_resolution',
+        label: 'Categoría ML (resolución dinámica)',
+        status: 'ok',
+        detail: `Categoría: ${resolution.categoryName} (${resolution.categoryId}) — hoja + marketplace habilitado`,
+      });
+    }
+  }
+
+  // ── 9. Images publishable ─────────────────────────────────────────────────
   const imagePaths = (payload?.pictures ?? []).map((p) => p.source);
   if (imagePaths.length === 0) {
     checks.push({
@@ -181,7 +217,7 @@ export async function runPreflight(
     checks.push({ id: 'images', label: 'Imágenes del producto', status: imgStatus, detail: imgDetail });
   }
 
-  // ── 8. Image hosting config ───────────────────────────────────────────────
+  // ── 10. Image hosting config ──────────────────────────────────────────────
   const rawBase = process.env.IMAGE_PUBLIC_BASE_URL ?? '';
   const hasLocal = (payload?.pictures ?? []).some((p) => p.source.startsWith('/uploads/'));
   if (hasLocal && rawBase) {

@@ -93,6 +93,14 @@ export interface ProductDraft {
     localPickUp: boolean;
     freeShipping: boolean;
   };
+  // Extended attributes for ML API compatibility
+  gtin?: string;
+  manufacturer?: string;
+  powerSupplyType?: string;
+  requiresAssembly?: boolean;
+  includesAssemblyManual?: boolean;
+  /** User-provided ML category ID override — skips category prediction when present */
+  officialCategoryId?: string;
 }
 
 export interface MLAttribute {

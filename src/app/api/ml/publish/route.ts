@@ -15,6 +15,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { getCredentials, refreshAccessToken } from '@/lib/mercadolibre/auth';
 import { publishSingleItem, isDryRun } from '@/lib/mercadolibre/publish';
 import { runPreflight } from '@/lib/mercadolibre/preflight';
+import { enrichPayload } from '@/lib/mercadolibre/payload-enricher';
 import { prepareImages } from '@/lib/images/prepare-images';
 import { getDeploymentEnvironment } from '@/lib/env/runtime';
 import { auth } from '@/auth';
@@ -26,6 +27,8 @@ interface PublishRequestItem {
   payload: MLPayload;
   rowIndex?: number;
   draftId?: string;
+  /** Optional ML category ID override — skips category prediction when present */
+  officialCategoryId?: string;
 }
 
 export async function POST(request: NextRequest) {
@@ -196,7 +199,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 4. Publish
+    // 4. Enrich payload — resolve dynamic ML category + filter attributes (real mode only)
+    let enrichmentWarnings: string[] = [];
+    if (!dryRun) {
+      const enriched = await enrichPayload(
+        item.payload,
+        item.payload.title,
+        item.officialCategoryId,
+        accessToken
+      );
+      item.payload = enriched.payload;
+      enrichmentWarnings = enriched.warnings;
+    }
+
+    // 5. Publish
     const itemStart = Date.now();
     const result = await publishSingleItem(item.payload, accessToken);
     const durationMs = Date.now() - itemStart;

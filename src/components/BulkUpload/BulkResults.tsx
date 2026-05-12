@@ -354,7 +354,11 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
     });
 
     try {
-      const items = publishableRows.map((r) => ({ payload: r.payload!, rowIndex: r.rowIndex }));
+      const items = publishableRows.map((r) => ({
+        payload: r.payload!,
+        rowIndex: r.rowIndex,
+        officialCategoryId: r.draft?.officialCategoryId,
+      }));
       const res = await fetch('/api/ml/publish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

@@ -30,7 +30,13 @@ export const CSV_COLUMNS: CsvColumnDef[] = [
   { key: 'local_pickup', header: 'retiro_en_persona',  required: false, example: 'si',        hint: 'si | no — si el comprador puede retirar en persona.' },
   { key: 'free_shipping',header: 'envio_gratis',       required: false, example: 'no',        hint: 'si | no — si el envío es gratis.' },
   { key: 'images',       header: 'imagenes',           required: false, example: 'https://example.com/foto1.jpg|https://example.com/foto2.jpg', hint: 'URL de imágenes. Para múltiples fotos, separarlas con | (pipe).' },
-  { key: 'description',  header: 'descripcion_larga',  required: false, example: '', hint: 'Descripción detallada. Se genera automáticamente si está vacío.' },
+  { key: 'description',       header: 'descripcion_larga',       required: false, example: '', hint: 'Descripción detallada. Se genera automáticamente si está vacío.' },
+  { key: 'gtin',              header: 'codigo_gtin',             required: false, example: '7509546069525', hint: 'Código EAN/UPC/GTIN del producto. Requerido por ML en algunas categorías.' },
+  { key: 'manufacturer',      header: 'fabricante',              required: false, example: 'Samsung Electronics', hint: 'Fabricante (diferente a marca en algunas categorías ML).' },
+  { key: 'power_supply_type', header: 'tipo_alimentacion',       required: false, example: '220V', hint: 'Tipo de alimentación: 220V, Batería, USB, Bivolt, etc.' },
+  { key: 'requires_assembly', header: 'requiere_armado',         required: false, example: 'no', hint: 'si | no — si el producto requiere armado.' },
+  { key: 'includes_assembly_manual', header: 'incluye_manual_armado', required: false, example: 'si', hint: 'si | no — si incluye manual de armado.' },
+  { key: 'official_category_id', header: 'categoria_ml',         required: false, example: 'MLA1577', hint: 'ID de categoría ML exacto. Omití para dejar que el sistema lo prediga automáticamente.' },
 ];
 
 export const CSV_HEADERS = CSV_COLUMNS.map((c) => c.header);

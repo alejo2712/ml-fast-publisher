@@ -208,6 +208,37 @@ function mapRowToOverrides(row: Record<string, string>): Partial<ProductDraft> {
   const description = get('description');
   if (description) overrides.description = description;
 
+  const gtin = get('gtin');
+  if (gtin) overrides.gtin = gtin;
+
+  const manufacturer = get('manufacturer');
+  if (manufacturer) overrides.manufacturer = manufacturer;
+
+  const powerSupplyType = get('power_supply_type');
+  if (powerSupplyType) overrides.powerSupplyType = powerSupplyType;
+
+  const parseBoolColumn = (v: string): boolean | undefined => {
+    const lc = v.toLowerCase().trim();
+    if (lc === 'si' || lc === 'sí' || lc === 'yes' || lc === '1' || lc === 'true') return true;
+    if (lc === 'no' || lc === '0' || lc === 'false') return false;
+    return undefined;
+  };
+
+  const requiresAssemblyRaw = get('requires_assembly');
+  if (requiresAssemblyRaw) {
+    const v = parseBoolColumn(requiresAssemblyRaw);
+    if (v !== undefined) overrides.requiresAssembly = v;
+  }
+
+  const includesManualRaw = get('includes_assembly_manual');
+  if (includesManualRaw) {
+    const v = parseBoolColumn(includesManualRaw);
+    if (v !== undefined) overrides.includesAssemblyManual = v;
+  }
+
+  const officialCategoryId = get('official_category_id');
+  if (officialCategoryId) overrides.officialCategoryId = officialCategoryId;
+
   // Images — pipe, semicolon or comma separated
   const imageRaw = get('images');
   if (imageRaw) {

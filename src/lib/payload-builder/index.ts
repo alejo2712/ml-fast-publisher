@@ -35,7 +35,9 @@ export function buildProductDraft(
     images: overrides.images ?? [],
     listingType: overrides.listingType ?? 'gold_special',
     shipping: overrides.shipping ?? {
-      mode: 'me2',
+      // Default to not_specified — me2 requires explicit setup per user/category.
+      // Users who want me2 should set it via the CSV `envio` column or seller preferences.
+      mode: 'not_specified',
       localPickUp: false,
       freeShipping: false,
     },
@@ -73,6 +75,15 @@ function buildAttributes(draft: ProductDraft): MLAttribute[] {
   if (draft.width) attrs.push({ id: 'WIDTH', value_name: `${draft.width} cm`, value_struct: { number: draft.width, unit: 'cm' } });
   if (draft.depth) attrs.push({ id: 'DEPTH', value_name: `${draft.depth} cm`, value_struct: { number: draft.depth, unit: 'cm' } });
   if (draft.weight) attrs.push({ id: 'WEIGHT', value_name: `${draft.weight} kg`, value_struct: { number: draft.weight, unit: 'kg' } });
+
+  // Extended ML attributes
+  if (draft.gtin) attrs.push({ id: 'GTIN', value_name: draft.gtin });
+  if (draft.manufacturer) attrs.push({ id: 'MANUFACTURER', value_name: draft.manufacturer });
+  if (draft.powerSupplyType) attrs.push({ id: 'POWER_SUPPLY_TYPE', value_name: draft.powerSupplyType });
+  if (draft.requiresAssembly !== undefined)
+    attrs.push({ id: 'REQUIRES_ASSEMBLY', value_name: draft.requiresAssembly ? 'Sí' : 'No' });
+  if (draft.includesAssemblyManual !== undefined)
+    attrs.push({ id: 'INCLUDES_ASSEMBLY_MANUAL', value_name: draft.includesAssemblyManual ? 'Sí' : 'No' });
 
   return attrs;
 }
