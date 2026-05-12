@@ -542,11 +542,26 @@ Before sending POST /items:
 - [x] Build passing (33 routes, 0 TypeScript errors, 71/71 parser tests)
 - [x] Deployed to https://ml-fast-publisher.vercel.app
 
+## Session 17 additions (category path validation + post-publish verification)
+- [x] category-resolver.ts: path_from_root added to MLCategoryDetail + MLCategoryResolution
+- [x] category-resolver.ts: isCategoryCompatibleWithProductType() — validates path contains "electro"/"cocina" node AND category name matches product-type keywords
+- [x] category-resolver.ts: resolveCategory() accepts optional productType — retries with type-specific query if first result is incompatible; returns flagged result on failure
+- [x] payload-enricher.ts: enrichPayload() accepts productType; blocks publish + surfaces categoryIncompatibilityReason when category path is wrong
+- [x] publish.ts: verifyPublishedItem() — GET /items/{id} 1.5s after successful publish; detects early ML rejection/reclassification
+- [x] types.ts: MLItemVerification interface; MLPublishResult.mlItemVerification field
+- [x] route.ts: passes productType to enrichPayload; calls verifyPublishedItem; stores mlItemStatus/mlItemSubStatus/mlItemCategoryId in PublishHistory
+- [x] BulkResults.tsx: passes applianceType as productType in publish items array
+- [x] schema.prisma: mlItemStatus/mlItemSubStatus/mlItemCategoryId on PublishHistory; db push run on local
+- [x] tests/fixtures/ml-real-publish-v4.xlsx — refrigerator GTIN=7709545018831, both products use tipo_producto for type check; 2/2 ok, 71/71 parser tests, build clean (33 routes)
+- [x] PR created: https://github.com/alejo2712/ml-fast-publisher/pull/1
+
 ## Next Session Instructions
-1. **PRIORITY 1**: Test real ML bulk publish with ml-real-publish-test.xlsx — verify items publish successfully. Use HTTPS image URLs. Check PublishHistory for ML error responses.
-2. **UI improvements (F)**: Per-row show resolved ML category name + ID; show which required attributes are missing before publish; category badge (green=leaf, orange=non-leaf, red=not found).
-3. **Shipping safety (G)**: Add `GET /users/{user_id}/shipping_modes` call in enricher to validate me2 is allowed; fall back to not_specified if not.
-4. **Persist bulk CSV results** to `BulkUpload` DB table for history/audit.
+1. **PRIORITY 1**: Merge PR https://github.com/alejo2712/ml-fast-publisher/pull/1 to trigger Vercel deploy.
+2. **NEON DB**: After deploy, run `DATABASE_URL=<neon-url> npx prisma db push` to add ml_item_status/ml_item_sub_status/ml_item_category_id columns.
+3. **Test real publish**: Upload `tests/fixtures/ml-real-publish-v4.xlsx` — verify GTIN in payload, check PublishHistory.mlItemStatus after publish (should be "active").
+4. **UI improvements (F)**: Per-row show resolved ML category name + ID; category badge (green=leaf, orange=non-leaf, red=not found); show missing required attrs before publish.
+5. **Shipping safety (G)**: GET /users/{user_id}/shipping_modes in enricher; fallback to not_specified.
+6. **Persist bulk CSV results** to BulkUpload DB table.
 5. **Additional categories**: mobile phones, mattresses (follow pattern in `src/config/categories/appliances.ts`).
 6. **ML CDN image upload**: For uploaded images, call `POST /pictures` to get ML-hosted URL before publish (POST /pictures → secure_url → replace local paths).
 
