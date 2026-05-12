@@ -397,15 +397,39 @@ npm run dev
 - [x] docs/testing/manual-test-plan.md: section 20 (bulk import) — 9 groups, 40+ scenarios
 - [x] Build passing (31 routes, 0 TypeScript errors, 71/71 parser tests)
 
+### Session 13 additions (deployment + real publish enablement)
+- [x] Deployed to Vercel (production): https://ml-fast-publisher.vercel.app
+- [x] Neon PostgreSQL provisioned; schema pushed via `prisma db push` against Neon
+- [x] All env vars set in Vercel: AUTH_SECRET, DATABASE_URL, MERCADOLIBRE_* (all 5), IMAGE_PUBLIC_BASE_URL, NEXTAUTH_URL
+- [x] /api/health verified: DB ok, auth ok, env ok, ML credentials ok, image hosting ok
+- [x] ML OAuth connected (real ML account) — tokens persisted in Neon DB
+- [x] XLSX test fixture: tests/fixtures/test-products-appliances.xlsx — 12 rows (6 ok, 3 warnings, 3 errors), 12/12 verified
+- [x] scripts/generate-test-xlsx.ts + scripts/verify-test-xlsx.ts
+- [x] Schema: PublishHistory gets `mlResponse Json? @map("ml_response")` — raw ML API response stored per publish
+- [x] src/lib/mercadolibre/types.ts: MLPublishResult gets `mlResponse?: unknown`; MLApiErrorBody interface added
+- [x] src/lib/mercadolibre/client.ts: MLApiError class (extends Error) — structured error with httpStatus + body; mlPost now returns `{ data, rawBody }` so callers capture ML response without re-parsing
+- [x] src/lib/mercadolibre/publish.ts: publishSingleItem returns mlResponse on success + failure; publishBulkItems hard-limits real publishes to 1 item
+- [x] /api/ml/publish: hard 1-item limit for real publishes (422 if > 1); stores mlResponse in PublishHistory
+- [x] PublishButton: richer success screen — item ID (Hash icon), permalink (ExternalLink), "Publicar otro" link; richer error screen with structured message
+- [x] README: "Habilitar publicación real" section — prerequisites table, how to enable, image requirements, ML error table, safety limits
+- [x] Build passing (33 routes, 0 TypeScript errors)
+
+### Real publish safety architecture
+- `isDryRun()` in publish.ts: returns true unless `MERCADOLIBRE_DRY_RUN === 'false'` (exact string)
+- 1-item real limit enforced at two layers: publishBulkItems() AND /api/ml/publish route
+- Preflight auto-runs in PublishButton modal when real mode — blocks confirm on any error check
+- 4 explicit confirmation checkboxes required before confirm button activates in real mode
+- mlResponse stored in DB for both success (item id, permalink, status) and failure (ML error body)
+- MLApiError parses ML error body → human-readable message with cause array
+
 ## Next Session Instructions
-1. **Deploy to Vercel**: follow docs/deployment/vercel.md — create Neon DB, set all env vars, run prisma db push against production DB, verify /api/health returns ok
-2. **Live OAuth validation**: connect real ML sandbox credentials → verify DB row → test dry-run → test preflight → verify disconnect clears DB row
-3. **Image hosting**: for real ML publishing, upload images to an external CDN (Cloudinary/Imgur/S3) and use their HTTPS URLs in products; OR set IMAGE_PUBLIC_BASE_URL to production domain
-4. **First controlled real publish**: use /settings/production-readiness to verify all checks pass, then publish ONE item via the Safe First Publish flow; verify it appears in ML seller dashboard; delete if test
-5. **Run manual test plan section 20** to verify bulk import end-to-end in the browser before declaring it production-ready
-6. Add additional categories: mobile phones, mattresses (follow pattern in `src/config/categories/appliances.ts`)
-7. Persist bulk CSV results to `BulkUpload` DB table for history/audit
-8. For real ML publishing with uploaded images (Vercel): add ML CDN image upload step before publish (POST /pictures, get secure_url, replace local paths)
+1. **First real publish**: use HTTPS image URLs (e.g. from Cloudinary/Imgur) → single product flow → verify in ML seller dashboard → check /history for mlItemId + permalink
+2. **Set MERCADOLIBRE_DRY_RUN=false in Vercel** when ready: `echo "false" | vercel env add MERCADOLIBRE_DRY_RUN production` then `vercel --prod`
+3. **Verify ML OAuth redirect URI**: must be `https://ml-fast-publisher.vercel.app/api/ml/callback` in ML developer console
+4. **Run manual test plan section 20** to verify bulk import end-to-end in the browser
+5. Add additional categories: mobile phones, mattresses (follow pattern in `src/config/categories/appliances.ts`)
+6. Persist bulk CSV results to `BulkUpload` DB table for history/audit
+7. For real ML publishing with uploaded images: add ML CDN image upload step before publish (POST /pictures, get secure_url, replace local paths)
 
 ## WARNINGS — Read Before Enabling Real Publishing
 - `MERCADOLIBRE_DRY_RUN` defaults to `true` — no real publish without explicit opt-in
@@ -415,6 +439,7 @@ npm run dev
 - Prisma 7: no `url` in schema.prisma — connection URL lives in `prisma.config.ts` and `db.ts` adapter
 - No migrations folder — project uses `prisma db push` for schema sync. Run `DATABASE_URL=... npx prisma db push` after any schema change.
 - Session 8 schema changes (VALIDATION_FAILED, PREFLIGHT_FAILED enum values + preflightResult/imagePrepResult columns) require `prisma db push` before those fields will work at runtime.
+- Session 13 schema change: `mlResponse Json?` column added to publish_history — already pushed to Neon.
 - Local uploaded images (`/uploads/...`) cannot be published to ML in real mode — ML API requires publicly accessible HTTPS URLs. Set `IMAGE_PUBLIC_BASE_URL=https://your-domain.com` to auto-convert local paths, or use external HTTPS image URLs.
 
 ## Implementation Rules

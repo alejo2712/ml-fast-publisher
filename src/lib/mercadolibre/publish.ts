@@ -7,7 +7,7 @@
 
 import type { MLPayload } from '@/types';
 import type { MLPublishResult, MLBulkPublishResult } from './types';
-import { mlPost } from './client';
+import { mlPost, MLApiError } from './client';
 
 export function isDryRun(): boolean {
   // Default to true — must explicitly set to "false" to publish for real
@@ -18,6 +18,7 @@ interface MLItemResponse {
   id: string;
   permalink: string;
   status: string;
+  [key: string]: unknown;
 }
 
 export async function publishSingleItem(
@@ -33,26 +34,51 @@ export async function publishSingleItem(
   }
 
   try {
-    const item = await mlPost<MLItemResponse>('/items', accessToken, payload);
+    const { data: item, rawBody } = await mlPost<MLItemResponse>('/items', accessToken, payload);
     return {
       status: 'published',
       itemId: item.id,
       permalink: item.permalink,
       message: `Publicado exitosamente. ID: ${item.id}`,
+      mlResponse: rawBody,
     };
   } catch (err) {
+    const message = err instanceof Error ? err.message : 'Error desconocido al publicar.';
+    const mlResponse = err instanceof MLApiError ? err.body : undefined;
     return {
       status: 'failed',
-      message: err instanceof Error ? err.message : 'Error desconocido al publicar.',
+      message,
+      mlResponse,
     };
   }
 }
 
+/**
+ * Publish multiple items.
+ * SAFETY: Real publishes are limited to 1 item per call — enforced here AND in the API route.
+ * Bulk real publish is intentionally disabled.
+ */
 export async function publishBulkItems(
   items: Array<{ payload: MLPayload; rowIndex?: number }>,
   accessToken: string
 ): Promise<MLBulkPublishResult> {
   const dryRun = isDryRun();
+
+  // Hard safety limit: real mode allows only 1 item at a time
+  if (!dryRun && items.length > 1) {
+    return {
+      results: items.map(({ rowIndex }) => ({
+        rowIndex,
+        status: 'failed',
+        message: 'Publicación real limitada a 1 ítem por vez. Publicación masiva real no habilitada.',
+      })),
+      totalPublished: 0,
+      totalFailed: items.length,
+      totalSkipped: 0,
+      dryRun: false,
+    };
+  }
+
   const results: MLPublishResult[] = [];
 
   for (const { payload, rowIndex } of items) {

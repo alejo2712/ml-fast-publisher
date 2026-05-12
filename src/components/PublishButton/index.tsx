@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import {
   Send, AlertTriangle, CheckCircle2, Loader2, ShieldAlert, FlaskConical,
-  X, ImageIcon, ShieldCheck, AlertCircle, Info, ShieldOff,
+  X, ImageIcon, ShieldCheck, AlertCircle, Info, ShieldOff, ExternalLink, Hash,
 } from 'lucide-react';
 import { cn } from '@/components/ui';
 import type { MLPayload } from '@/types';
@@ -384,15 +384,43 @@ export function PublishButton({ payload, isReady, hasLocalImages = false, rowInd
 
   if (result) {
     const r = result.results[0];
+
     if (r?.status === 'published') {
       return (
-        <div className="flex items-center gap-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2.5">
-          <CheckCircle2 size={16} />
-          <span className="font-medium">Publicado</span>
-          {r.permalink && <a href={r.permalink} target="_blank" rel="noreferrer" className="text-xs underline ml-1">Ver en ML</a>}
+        <div className="w-full bg-emerald-50 border border-emerald-200 rounded-xl p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
+            <span className="font-bold text-emerald-800 text-sm">¡Publicado en Mercado Libre!</span>
+          </div>
+          <div className="space-y-1.5 text-xs text-gray-600">
+            {r.itemId && (
+              <div className="flex items-center gap-1.5">
+                <Hash size={12} className="text-gray-400 shrink-0" />
+                <span className="font-mono font-medium text-gray-800">{r.itemId}</span>
+              </div>
+            )}
+            {r.permalink && (
+              <a
+                href={r.permalink}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-1.5 text-emerald-700 hover:text-emerald-900 font-medium transition-colors"
+              >
+                <ExternalLink size={12} className="shrink-0" />
+                Ver publicación en Mercado Libre
+              </a>
+            )}
+          </div>
+          <button
+            onClick={() => setResult(null)}
+            className="text-xs text-gray-400 hover:text-gray-600 underline transition-colors"
+          >
+            Publicar otro
+          </button>
         </div>
       );
     }
+
     if (r?.status === 'dry_run') {
       return (
         <div className="flex items-center gap-2 text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5">
@@ -402,11 +430,20 @@ export function PublishButton({ payload, isReady, hasLocalImages = false, rowInd
         </div>
       );
     }
+
     return (
-      <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-2.5">
-        <AlertTriangle size={16} />
-        <span className="font-medium truncate">{r?.message ?? 'Error desconocido'}</span>
-        <button onClick={() => setResult(null)} className="ml-2 text-xs shrink-0 underline">Reintentar</button>
+      <div className="w-full bg-red-50 border border-red-200 rounded-xl p-4 space-y-2">
+        <div className="flex items-center gap-2">
+          <AlertTriangle size={16} className="text-red-500 shrink-0" />
+          <span className="font-semibold text-red-800 text-sm">Error al publicar</span>
+        </div>
+        <p className="text-xs text-red-700 leading-snug">{r?.message ?? 'Error desconocido'}</p>
+        <button
+          onClick={() => setResult(null)}
+          className="text-xs text-red-500 hover:text-red-700 underline transition-colors"
+        >
+          Reintentar
+        </button>
       </div>
     );
   }

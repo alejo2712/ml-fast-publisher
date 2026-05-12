@@ -202,6 +202,69 @@ Ver documentación detallada:
 
 ---
 
+## Habilitar publicación real
+
+### Requisitos previos (todos obligatorios)
+
+| Requisito | Cómo verificar |
+|---|---|
+| Credenciales ML configuradas | `/api/health` → subsystem `mercadolibre: ok` |
+| OAuth conectado | `/settings/mercadolibre` → ML User ID visible |
+| Imágenes con URLs HTTPS públicas | No usar `/uploads/...` — usar URLs externas |
+| Preflight sin errores bloqueantes | "Verificar preparación" en `/settings/mercadolibre` |
+| Dry-run validado al menos una vez | Historia en `/history` → al menos 1 entrada `DRY_RUN` |
+
+### Cómo habilitar
+
+**Vercel (producción):**
+```bash
+echo "false" | vercel env add MERCADOLIBRE_DRY_RUN production
+vercel --prod  # redesplegar para aplicar
+```
+
+**Local:**
+```bash
+# en .env.local
+MERCADOLIBRE_DRY_RUN=false
+```
+
+### Comportamiento en modo real
+
+- Cada publish envía una solicitud `POST /items` a la API de Mercado Libre
+- El ítem queda publicado inmediatamente — **no hay deshacer automático**
+- Se requieren 4 confirmaciones explícitas antes de confirmar
+- El preflight corre automáticamente al abrir el modal de confirmación
+- La publicación masiva real está **deshabilitada** — máximo 1 ítem por vez
+- Resultado: `mlItemId`, `permalink` y `mlResponse` se persisten en `PublishHistory`
+
+### Imágenes para publicación real
+
+ML requiere URLs HTTPS accesibles desde internet. Opciones:
+
+| Opción | Configuración |
+|---|---|
+| URLs externas directas | Subir imágenes a Cloudinary / Imgur / S3 y usar la URL en el campo |
+| Imágenes del servidor | Configurar `IMAGE_PUBLIC_BASE_URL=https://tu-dominio.com` |
+
+Las imágenes `/uploads/...` **solo funcionan en dry-run**. En modo real son bloqueadas.
+
+### Errores ML comunes
+
+| Error | Causa probable |
+|---|---|
+| `403 Forbidden` | Token vencido o sin permisos — reconectar OAuth |
+| `400 category_id` | ID de categoría incorrecto — verificar con ML API |
+| `400 price` | Precio demasiado bajo para la categoría |
+| `422 pictures` | Imagen no accesible por ML — verificar que sea HTTPS público |
+
+### Límites de seguridad actuales
+
+- **Máximo 1 ítem por acción** en modo real (enforcement en API + biblioteca)
+- **Publicación masiva real deshabilitada** — requiere habilitación explícita futura
+- `MERCADOLIBRE_DRY_RUN=true` es el default — nunca se activa real sin cambio explícito
+
+---
+
 ## Checklist de rollout a producción
 
 Antes de habilitar publicación real en producción:
@@ -210,10 +273,12 @@ Antes de habilitar publicación real en producción:
 - [ ] OAuth flow probado: conectar → desconectar → reconectar
 - [ ] Tokens persistidos en DB (verificar con `/api/ml/status`)
 - [ ] Refresh token funcional (test con token vencido)
-- [ ] `IMAGE_PUBLIC_BASE_URL` configurado con URL HTTPS del servidor
+- [ ] Imágenes con URLs HTTPS públicas (no `/uploads/...`)
+- [ ] `IMAGE_PUBLIC_BASE_URL` configurado si se usan imágenes del servidor
 - [ ] Preflight corre sin bloqueos (usar "Verificar preparación" en `/settings/mercadolibre`)
-- [ ] Test dry-run completado sin errores
-- [ ] `MERCADOLIBRE_DRY_RUN=false` seteado explícitamente
+- [ ] Test dry-run completado sin errores, resultado en `/history`
+- [ ] `MERCADOLIBRE_DRY_RUN=false` seteado explícitamente y redesplegado
+- [ ] Primera publicación real: 1 ítem de prueba, verificar en ML seller dashboard
 - [ ] Categorías ML verificadas contra API real (IDs en `CLAUDE.md` son estimados)
 - [ ] Rate limiting considerado (~50 req/s ML API)
 

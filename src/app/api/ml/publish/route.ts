@@ -31,6 +31,18 @@ export async function POST(request: NextRequest) {
 
   const dryRun = isDryRun();
   const items: PublishRequestItem[] = body.items;
+
+  // Hard safety limit: real publishes are restricted to 1 item at a time.
+  // Bulk real publishing is intentionally disabled — too risky without per-row review.
+  if (!dryRun && items.length > 1) {
+    return NextResponse.json(
+      {
+        error: 'Publicación real limitada a 1 ítem por vez. Publicación masiva real no está habilitada.',
+        hint: 'Para publicar varios ítems reales, publicá uno por uno desde la pantalla de revisión.',
+      },
+      { status: 422 }
+    );
+  }
   // Preflight result per item (stored in history for real publishes)
   const preflightResults: (PreflightResult | null)[] = new Array(items.length).fill(null);
 
@@ -174,6 +186,7 @@ export async function POST(request: NextRequest) {
             errorMessage: r.status === 'failed' ? r.message : null,
             preflightResult: preflightResults[i] ? (preflightResults[i] as object) : undefined,
             imagePrepResult: imgPrep as object,
+            mlResponse: r.mlResponse ? (r.mlResponse as object) : undefined,
             environment,
             durationMs: Math.round(publishDurationMs / items.length),
           },
