@@ -30,7 +30,13 @@ export interface MLApiErrorBody {
   message?: string;
   error?: string;
   status?: number;
-  cause?: Array<{ code?: number; description?: string }>;
+  cause?: Array<{
+    code?: number;
+    description?: string;
+    /** e.g. "error" | "warning" */
+    type?: string;
+    department?: string;
+  }>;
 }
 
 export interface MLBulkPublishResult {

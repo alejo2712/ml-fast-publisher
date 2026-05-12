@@ -23,6 +23,8 @@ interface RowPublishState {
   message?: string;
   permalink?: string;
   itemId?: string;
+  /** Raw ML API response — present for real publishes (success + failure) */
+  mlResponse?: unknown;
 }
 
 // ─── Inline edit cell ────────────────────────────────────────────────────────
@@ -212,7 +214,51 @@ function EditPanel({ row, onEdit }: EditPanelProps) {
   );
 }
 
-// ─── Detail view (JSON + publish state) ─────────────────────────────────────
+// ─── ML error cause list ─────────────────────────────────────────────────────
+
+interface MLCause {
+  code?: number;
+  description?: string;
+  type?: string;
+  department?: string;
+}
+
+function MLCauseList({ mlResponse }: { mlResponse: unknown }) {
+  const body = mlResponse as Record<string, unknown> | null;
+  if (!body || typeof body !== 'object') return null;
+  const causes = body.cause as MLCause[] | undefined;
+  if (!causes || causes.length === 0) return null;
+
+  return (
+    <div className="space-y-1.5">
+      <p className="text-xs font-semibold text-red-700 uppercase tracking-wide">
+        Causas del error (Mercado Libre)
+      </p>
+      <div className="space-y-1.5">
+        {causes.map((c, i) => (
+          <div key={i} className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs space-y-0.5">
+            {c.description && (
+              <p className="text-red-800 font-medium">{c.description}</p>
+            )}
+            <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-red-500">
+              {c.code !== undefined && (
+                <span><span className="text-red-400">Código:</span> {c.code}</span>
+              )}
+              {c.type && (
+                <span><span className="text-red-400">Tipo:</span> {c.type}</span>
+              )}
+              {c.department && (
+                <span><span className="text-red-400">Área:</span> {c.department}</span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Detail view (publish state + ML errors + JSON) ──────────────────────────
 
 interface RowDetailProps {
   row: CsvRowResult;
@@ -220,7 +266,14 @@ interface RowDetailProps {
 }
 
 function RowDetail({ row, publishState }: RowDetailProps) {
-  const [showJson, setShowJson] = useState(false);
+  const [showPayload, setShowPayload] = useState(false);
+  const [showRawResponse, setShowRawResponse] = useState(false);
+
+  const hasMlResponse = publishState?.mlResponse != null;
+  const hasCauses = (() => {
+    const body = publishState?.mlResponse as Record<string, unknown> | undefined;
+    return Array.isArray(body?.cause) && (body.cause as unknown[]).length > 0;
+  })();
 
   return (
     <div className="px-4 pb-4 space-y-3 bg-white border-t border-gray-50">
@@ -235,6 +288,7 @@ function RowDetail({ row, publishState }: RowDetailProps) {
         </div>
       )}
 
+      {/* Publish status badge */}
       {publishState && publishState.status !== 'idle' && (
         <div className={cn(
           'text-xs rounded-lg px-3 py-2 space-y-1',
@@ -269,16 +323,50 @@ function RowDetail({ row, publishState }: RowDetailProps) {
         </div>
       )}
 
-      {row.payload && (
-        <button
-          onClick={() => setShowJson((v) => !v)}
-          className="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1"
-        >
-          {showJson ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-          {showJson ? 'Ocultar JSON' : 'Ver JSON (ML)'}
-        </button>
+      {/* ML error causes — shown first for failed rows */}
+      {publishState?.status === 'failed' && hasMlResponse && (
+        <MLCauseList mlResponse={publishState.mlResponse} />
       )}
-      {showJson && row.payload && <JsonPreview payload={row.payload} />}
+
+      {/* Expandable sections */}
+      <div className="space-y-1.5">
+        {/* Payload JSON */}
+        {row.payload && (
+          <div>
+            <button
+              onClick={() => setShowPayload((v) => !v)}
+              className="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1"
+            >
+              {showPayload ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              {showPayload ? 'Ocultar payload' : 'Ver payload JSON (ML)'}
+            </button>
+            {showPayload && <div className="mt-2"><JsonPreview payload={row.payload} /></div>}
+          </div>
+        )}
+
+        {/* Raw ML response — only present after a real publish attempt */}
+        {hasMlResponse && (
+          <div>
+            <button
+              onClick={() => setShowRawResponse((v) => !v)}
+              className={cn(
+                'text-xs font-medium flex items-center gap-1',
+                hasCauses
+                  ? 'text-red-600 hover:text-red-800'
+                  : 'text-gray-500 hover:text-gray-700'
+              )}
+            >
+              {showRawResponse ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              {showRawResponse ? 'Ocultar respuesta ML' : 'Ver respuesta completa de Mercado Libre'}
+            </button>
+            {showRawResponse && (
+              <div className="mt-2">
+                <JsonPreview payload={publishState!.mlResponse as object} />
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -411,6 +499,7 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
           message: r.message,
           permalink: r.permalink,
           itemId: r.itemId,
+          mlResponse: r.mlResponse,
         });
       });
       setPublishStates(newStates);

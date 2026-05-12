@@ -1,12 +1,11 @@
 'use client';
 
-import type { MLPayload } from '@/types';
 import { Copy, Download, Check } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/components/ui';
 
 interface JsonPreviewProps {
-  payload: MLPayload;
+  payload: unknown;
 }
 
 export function JsonPreview({ payload }: JsonPreviewProps) {
