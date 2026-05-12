@@ -16,7 +16,7 @@ export interface MLTokens {
 
 export interface MLPublishResult {
   rowIndex?: number;
-  status: 'published' | 'dry_run' | 'failed' | 'skipped';
+  status: 'published' | 'dry_run' | 'failed' | 'skipped' | 'preflight_failed' | 'skipped_invalid';
   itemId?: string;
   permalink?: string;
   message: string;

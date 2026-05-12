@@ -6,7 +6,7 @@ import type { MLBulkPublishResult, MLPublishResult } from '@/lib/mercadolibre/ty
 import type { ProductDraft } from '@/types';
 import {
   CheckCircle2, AlertTriangle, XCircle, Download, ChevronDown, ChevronRight,
-  Send, FlaskConical, Loader2, Clock, Pencil, X, Check,
+  Send, FlaskConical, Loader2, Clock, Pencil, X, Check, ShieldOff, ExternalLink, Hash, SkipForward,
 } from 'lucide-react';
 import { useState, useEffect, useCallback, useRef, memo } from 'react';
 import { cn } from '@/components/ui';
@@ -16,12 +16,13 @@ const CONDITION_LABELS: Record<string, string> = {
   new: 'Nuevo', used: 'Usado', refurbished: 'Reacondicionado',
 };
 
-type PublishRowStatus = 'idle' | 'publishing' | 'published' | 'dry_run' | 'failed';
+type PublishRowStatus = 'idle' | 'publishing' | 'published' | 'dry_run' | 'failed' | 'preflight_failed' | 'skipped_invalid';
 
 interface RowPublishState {
   status: PublishRowStatus;
   message?: string;
   permalink?: string;
+  itemId?: string;
 }
 
 // ─── Inline edit cell ────────────────────────────────────────────────────────
@@ -236,19 +237,34 @@ function RowDetail({ row, publishState }: RowDetailProps) {
 
       {publishState && publishState.status !== 'idle' && (
         <div className={cn(
-          'text-xs rounded-lg px-3 py-2 flex items-center gap-2',
+          'text-xs rounded-lg px-3 py-2 space-y-1',
           publishState.status === 'published' ? 'bg-emerald-50 text-emerald-700' :
           publishState.status === 'dry_run' ? 'bg-blue-50 text-blue-700' :
+          publishState.status === 'preflight_failed' ? 'bg-orange-50 text-orange-700' :
+          publishState.status === 'skipped_invalid' ? 'bg-gray-50 text-gray-500' :
           publishState.status === 'failed' ? 'bg-red-50 text-red-700' :
           'bg-gray-50 text-gray-600'
         )}>
-          {publishState.status === 'publishing' && <Loader2 size={12} className="animate-spin" />}
-          {publishState.status === 'published' && <CheckCircle2 size={12} />}
-          {publishState.status === 'dry_run' && <FlaskConical size={12} />}
-          {publishState.status === 'failed' && <XCircle size={12} />}
-          <span>{publishState.message}</span>
+          <div className="flex items-center gap-2">
+            {publishState.status === 'publishing' && <Loader2 size={12} className="animate-spin" />}
+            {publishState.status === 'published' && <CheckCircle2 size={12} />}
+            {publishState.status === 'dry_run' && <FlaskConical size={12} />}
+            {publishState.status === 'failed' && <XCircle size={12} />}
+            {publishState.status === 'preflight_failed' && <ShieldOff size={12} />}
+            {publishState.status === 'skipped_invalid' && <SkipForward size={12} />}
+            <span>{publishState.message}</span>
+          </div>
+          {publishState.itemId && (
+            <div className="flex items-center gap-1 pl-4">
+              <Hash size={10} className="opacity-60" />
+              <span className="font-mono">{publishState.itemId}</span>
+            </div>
+          )}
           {publishState.permalink && (
-            <a href={publishState.permalink} target="_blank" rel="noreferrer" className="underline ml-1">Ver en ML</a>
+            <a href={publishState.permalink} target="_blank" rel="noreferrer"
+              className="flex items-center gap-1 pl-4 underline font-medium">
+              <ExternalLink size={10} />Ver en Mercado Libre
+            </a>
           )}
         </div>
       )}
@@ -278,6 +294,15 @@ interface BulkResultsProps {
   onRowEdit: (rowIndex: number, changes: RowChanges) => void;
 }
 
+interface BulkPublishSummary {
+  attempted: number;
+  published: number;
+  dryRun: number;
+  failed: number;
+  skipped: number;
+  preflightFailed: number;
+}
+
 export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset, onRowEdit }: BulkResultsProps) {
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
   const [editingRows, setEditingRows] = useState<Set<number>>(new Set());
@@ -285,6 +310,8 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
   const [isBulkPublishing, setIsBulkPublishing] = useState(false);
   const [mlDryRun, setMlDryRun] = useState(true);
   const [showBulkConfirm, setShowBulkConfirm] = useState(false);
+  const [realConfirmed, setRealConfirmed] = useState(false);
+  const [publishSummary, setPublishSummary] = useState<BulkPublishSummary | null>(null);
 
   useEffect(() => {
     fetch('/api/ml/status')
@@ -309,12 +336,17 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
     });
   }
 
+  // Publish error rows are skipped; warning rows (missing optional fields) are included
   const publishableRows = rows.filter((r) => r.status !== 'error' && r.payload !== null);
   const exportableCount = rows.filter((r) => r.payload !== null).length;
 
   async function handleBulkPublish() {
     setShowBulkConfirm(false);
+    setRealConfirmed(false);
     setIsBulkPublishing(true);
+    setPublishSummary(null);
+
+    // Mark all publishable rows as "publishing"
     setPublishStates((prev) => {
       const next = new Map(prev);
       publishableRows.forEach((r) => next.set(r.rowIndex, { status: 'publishing', message: 'Publicando...' }));
@@ -328,26 +360,70 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ items }),
       });
-      const data: MLBulkPublishResult = await res.json();
-      setPublishStates((prev) => {
-        const next = new Map(prev);
-        data.results.forEach((r: MLPublishResult) => {
-          if (r.rowIndex !== undefined) {
-            next.set(r.rowIndex, {
-              status: r.status === 'published' ? 'published' : r.status === 'dry_run' ? 'dry_run' : 'failed',
-              message: r.message,
-              permalink: r.permalink,
-            });
-          }
+
+      // Always parse JSON — even non-2xx responses have useful bodies
+      let data: MLBulkPublishResult | null = null;
+      try {
+        data = await res.json() as MLBulkPublishResult;
+      } catch {
+        // JSON parse failed — mark all as failed
+        setPublishStates((prev) => {
+          const next = new Map(prev);
+          publishableRows.forEach((r) =>
+            next.set(r.rowIndex, { status: 'failed', message: `Error del servidor (${res.status})` })
+          );
+          return next;
         });
-        return next;
+        return;
+      }
+
+      // Handle top-level API errors (401, 503, etc.) that have no per-item results
+      if (!res.ok && (!data.results || data.results.length === 0)) {
+        const errMsg = (data as unknown as { error?: string }).error ?? `Error del servidor (${res.status})`;
+        setPublishStates((prev) => {
+          const next = new Map(prev);
+          publishableRows.forEach((r) => next.set(r.rowIndex, { status: 'failed', message: errMsg }));
+          return next;
+        });
+        return;
+      }
+
+      // Apply per-item results
+      const newStates = new Map<number, RowPublishState>();
+      data.results.forEach((r: MLPublishResult) => {
+        if (r.rowIndex === undefined) return;
+        const status: PublishRowStatus =
+          r.status === 'published' ? 'published' :
+          r.status === 'dry_run' ? 'dry_run' :
+          r.status === 'preflight_failed' ? 'preflight_failed' :
+          r.status === 'skipped_invalid' ? 'skipped_invalid' :
+          'failed';
+        newStates.set(r.rowIndex, {
+          status,
+          message: r.message,
+          permalink: r.permalink,
+          itemId: r.itemId,
+        });
       });
+      setPublishStates(newStates);
+
+      // Build summary
+      const resultsList = data.results;
+      setPublishSummary({
+        attempted: resultsList.length,
+        published: resultsList.filter((r) => r.status === 'published').length,
+        dryRun: resultsList.filter((r) => r.status === 'dry_run').length,
+        failed: resultsList.filter((r) => r.status === 'failed').length,
+        skipped: resultsList.filter((r) => r.status === 'skipped_invalid').length,
+        preflightFailed: resultsList.filter((r) => r.status === 'preflight_failed').length,
+      });
+
     } catch (err) {
+      // Network error
+      const msg = err instanceof Error ? err.message : 'Error de red';
       setPublishStates((prev) => {
         const next = new Map(prev);
-        publishableRows.forEach((r) =>
-          next.set(r.rowIndex, { status: 'failed', message: err instanceof Error ? err.message : 'Error de red' })
-        );
+        publishableRows.forEach((r) => next.set(r.rowIndex, { status: 'failed', message: msg }));
         return next;
       });
     } finally {
@@ -355,14 +431,13 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
     }
   }
 
-  const publishedCount = Array.from(publishStates.values()).filter((s) => s.status === 'published' || s.status === 'dry_run').length;
+  const publishedCount = Array.from(publishStates.values()).filter((s) => s.status === 'published').length;
+  const dryRunCount = Array.from(publishStates.values()).filter((s) => s.status === 'dry_run').length;
   const failedCount = Array.from(publishStates.values()).filter((s) => s.status === 'failed').length;
-
-  // Track how many rows have been edited
-  const editedCount = rows.filter((r, _, arr) => {
-    const orig = arr.find((x) => x.rowIndex === r.rowIndex);
-    return orig !== r;
-  }).length;
+  const skippedCount = Array.from(publishStates.values()).filter((s) =>
+    s.status === 'preflight_failed' || s.status === 'skipped_invalid'
+  ).length;
+  const hasPublishResults = publishStates.size > 0 && !isBulkPublishing;
 
   return (
     <div className="space-y-4">
@@ -382,18 +457,6 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
           <div className="flex items-center gap-1.5 text-sm text-red-700 bg-red-50 border border-red-200 px-3 py-1.5 rounded-lg">
             <XCircle size={14} />
             <span className="font-semibold">{totalErrors}</span> con errores
-          </div>
-        )}
-        {publishedCount > 0 && (
-          <div className="flex items-center gap-1.5 text-sm text-blue-700 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-lg">
-            {mlDryRun ? <FlaskConical size={14} /> : <CheckCircle2 size={14} />}
-            <span className="font-semibold">{publishedCount}</span> {mlDryRun ? 'simulados' : 'publicados'}
-          </div>
-        )}
-        {failedCount > 0 && (
-          <div className="flex items-center gap-1.5 text-sm text-red-700 bg-red-50 border border-red-200 px-3 py-1.5 rounded-lg">
-            <XCircle size={14} />
-            <span className="font-semibold">{failedCount}</span> fallidos
           </div>
         )}
 
@@ -436,30 +499,168 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
         </div>
       </div>
 
+      {/* Post-publish summary panel */}
+      {hasPublishResults && publishSummary && (
+        <div className={cn(
+          'rounded-xl border p-4 space-y-3',
+          mlDryRun ? 'bg-blue-50 border-blue-200' :
+          publishSummary.failed > 0 || publishSummary.preflightFailed > 0 ? 'bg-amber-50 border-amber-200' :
+          'bg-emerald-50 border-emerald-200'
+        )}>
+          <p className={cn('text-sm font-bold',
+            mlDryRun ? 'text-blue-800' :
+            publishSummary.failed > 0 || publishSummary.preflightFailed > 0 ? 'text-amber-800' :
+            'text-emerald-800'
+          )}>
+            {mlDryRun ? 'Simulación completada' : 'Publicación completada'}
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+            {(mlDryRun ? publishSummary.dryRun : publishSummary.published) > 0 && (
+              <div className="bg-white/70 rounded-lg p-2 text-center">
+                <p className="text-2xl font-bold text-emerald-700">
+                  {mlDryRun ? publishSummary.dryRun : publishSummary.published}
+                </p>
+                <p className="text-gray-600">{mlDryRun ? 'simulados' : 'publicados'}</p>
+              </div>
+            )}
+            {publishSummary.failed > 0 && (
+              <div className="bg-white/70 rounded-lg p-2 text-center">
+                <p className="text-2xl font-bold text-red-600">{publishSummary.failed}</p>
+                <p className="text-gray-600">fallidos</p>
+              </div>
+            )}
+            {publishSummary.preflightFailed > 0 && (
+              <div className="bg-white/70 rounded-lg p-2 text-center">
+                <p className="text-2xl font-bold text-orange-600">{publishSummary.preflightFailed}</p>
+                <p className="text-gray-600">preflight falló</p>
+              </div>
+            )}
+            {publishSummary.skipped > 0 && (
+              <div className="bg-white/70 rounded-lg p-2 text-center">
+                <p className="text-2xl font-bold text-gray-500">{publishSummary.skipped}</p>
+                <p className="text-gray-600">ignorados</p>
+              </div>
+            )}
+          </div>
+          {!mlDryRun && publishSummary.published > 0 && (
+            <p className="text-xs text-emerald-700">
+              Los ítems publicados ya están visibles en Mercado Libre. Revisá cada fila para ver el link.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Inline publish status badges (when publishing is in progress) */}
+      {(publishedCount > 0 || dryRunCount > 0 || failedCount > 0 || skippedCount > 0) && !publishSummary && (
+        <div className="flex flex-wrap gap-2">
+          {(publishedCount + dryRunCount) > 0 && (
+            <div className="flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg">
+              {mlDryRun ? <FlaskConical size={12} /> : <CheckCircle2 size={12} />}
+              <span className="font-semibold">{publishedCount + dryRunCount}</span> {mlDryRun ? 'simulados' : 'publicados'}
+            </div>
+          )}
+          {failedCount > 0 && (
+            <div className="flex items-center gap-1.5 text-xs text-red-700 bg-red-50 border border-red-200 px-2.5 py-1 rounded-lg">
+              <XCircle size={12} />
+              <span className="font-semibold">{failedCount}</span> fallidos
+            </div>
+          )}
+          {skippedCount > 0 && (
+            <div className="flex items-center gap-1.5 text-xs text-gray-600 bg-gray-50 border border-gray-200 px-2.5 py-1 rounded-lg">
+              <SkipForward size={12} />
+              <span className="font-semibold">{skippedCount}</span> ignorados
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Bulk confirm modal */}
       {showBulkConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm space-y-5 p-6">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md space-y-5 p-6">
             <h2 className="font-bold text-gray-900 text-lg">Confirmar publicación masiva</h2>
+
+            {/* Dry-run notice */}
             {mlDryRun && (
               <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-xl p-3 text-sm">
                 <FlaskConical size={15} className="text-blue-500 mt-0.5 shrink-0" />
-                <p className="text-blue-700"><span className="font-semibold">Dry-run activo.</span> No se publicará nada real.</p>
+                <p className="text-blue-700"><span className="font-semibold">Dry-run activo.</span> No se publicará nada real en Mercado Libre.</p>
               </div>
             )}
-            <p className="text-sm text-gray-600">
-              Se procesarán <span className="font-bold text-gray-900">{publishableRows.length} productos</span>.
-              {totalErrors > 0 && ` Los ${totalErrors} con errores serán ignorados.`}
-            </p>
+
+            {/* Real mode warning */}
+            {!mlDryRun && (
+              <div className="flex items-start gap-2 bg-red-50 border-2 border-red-300 rounded-xl p-3 text-sm">
+                <ShieldOff size={15} className="text-red-600 mt-0.5 shrink-0" />
+                <div>
+                  <p className="font-bold text-red-700">PUBLICACIÓN REAL EN MERCADO LIBRE</p>
+                  <p className="text-red-600 text-xs mt-0.5">
+                    Los productos se publicarán de forma real e inmediata. No hay deshacer automático.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Stats */}
+            <div className="bg-gray-50 rounded-xl p-4 space-y-1.5 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-500">Total a procesar</span>
+                <span className="font-bold text-gray-900">{publishableRows.length}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Listos para publicar</span>
+                <span className="font-semibold text-emerald-700">{rows.filter((r) => r.status === 'ok').length}</span>
+              </div>
+              {rows.filter((r) => r.status === 'warnings').length > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Con campos faltantes (se publicarán igual)</span>
+                  <span className="font-semibold text-amber-700">{rows.filter((r) => r.status === 'warnings').length}</span>
+                </div>
+              )}
+              {totalErrors > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Con errores (se ignorarán)</span>
+                  <span className="font-semibold text-red-600">{totalErrors}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Real mode confirmation checkbox */}
+            {!mlDryRun && (
+              <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={realConfirmed}
+                  onChange={(e) => setRealConfirmed(e.target.checked)}
+                  className="mt-0.5 rounded border-gray-300 text-red-600 cursor-pointer"
+                />
+                <span className="text-xs text-gray-700 leading-snug">
+                  Entiendo que estos productos se publicarán de forma real en Mercado Libre y
+                  deberé eliminarlos manualmente si fueron un test.
+                </span>
+              </label>
+            )}
+
             <div className="flex gap-3">
-              <button onClick={() => setShowBulkConfirm(false)} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50">
+              <button
+                onClick={() => { setShowBulkConfirm(false); setRealConfirmed(false); }}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50"
+              >
                 Cancelar
               </button>
               <button
                 onClick={handleBulkPublish}
-                className={cn('flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold text-white', mlDryRun ? 'bg-blue-600 hover:bg-blue-700' : 'bg-indigo-600 hover:bg-indigo-700')}
+                disabled={!mlDryRun && !realConfirmed}
+                className={cn(
+                  'flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold text-white transition-all',
+                  mlDryRun ? 'bg-blue-600 hover:bg-blue-700' : 'bg-red-600 hover:bg-red-700',
+                  'disabled:opacity-50 disabled:cursor-not-allowed'
+                )}
               >
-                {mlDryRun ? <><FlaskConical size={14} /> Simular</> : <><Send size={14} /> Publicar</>}
+                {mlDryRun
+                  ? <><FlaskConical size={14} /> Simular {publishableRows.length} productos</>
+                  : <><Send size={14} /> Publicar {publishableRows.length} en ML</>
+                }
               </button>
             </div>
           </div>
@@ -478,6 +679,8 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
             pubState?.status === 'published' ? <CheckCircle2 size={15} className="text-emerald-500 shrink-0" /> :
             pubState?.status === 'dry_run' ? <FlaskConical size={15} className="text-blue-500 shrink-0" /> :
             pubState?.status === 'failed' ? <XCircle size={15} className="text-red-500 shrink-0" /> :
+            pubState?.status === 'preflight_failed' ? <ShieldOff size={15} className="text-orange-500 shrink-0" /> :
+            pubState?.status === 'skipped_invalid' ? <SkipForward size={15} className="text-gray-400 shrink-0" /> :
             row.status === 'ok' ? <CheckCircle2 size={15} className="text-emerald-500 shrink-0" /> :
             row.status === 'warnings' ? <Clock size={15} className="text-amber-500 shrink-0" /> :
             <XCircle size={15} className="text-red-500 shrink-0" />;
@@ -486,6 +689,8 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
             pubState?.status === 'published' ? 'bg-emerald-50/60' :
             pubState?.status === 'dry_run' ? 'bg-blue-50/60' :
             pubState?.status === 'failed' ? 'bg-red-50/60' :
+            pubState?.status === 'preflight_failed' ? 'bg-orange-50/60' :
+            pubState?.status === 'skipped_invalid' ? 'bg-gray-50/60' :
             row.status === 'ok' ? 'bg-white' :
             row.status === 'warnings' ? 'bg-amber-50/30' :
             'bg-red-50/30';

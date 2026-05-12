@@ -54,37 +54,20 @@ export async function publishSingleItem(
 }
 
 /**
- * Publish multiple items.
- * SAFETY: Real publishes are limited to 1 item per call — enforced here AND in the API route.
- * Bulk real publish is intentionally disabled.
+ * Publish multiple items — real and dry-run both supported.
+ * Each item is published independently; failures do not stop remaining items.
  */
 export async function publishBulkItems(
   items: Array<{ payload: MLPayload; rowIndex?: number }>,
   accessToken: string
 ): Promise<MLBulkPublishResult> {
   const dryRun = isDryRun();
-
-  // Hard safety limit: real mode allows only 1 item at a time
-  if (!dryRun && items.length > 1) {
-    return {
-      results: items.map(({ rowIndex }) => ({
-        rowIndex,
-        status: 'failed',
-        message: 'Publicación real limitada a 1 ítem por vez. Publicación masiva real no habilitada.',
-      })),
-      totalPublished: 0,
-      totalFailed: items.length,
-      totalSkipped: 0,
-      dryRun: false,
-    };
-  }
-
   const results: MLPublishResult[] = [];
 
   for (const { payload, rowIndex } of items) {
     const result = await publishSingleItem(payload, accessToken);
     results.push({ ...result, rowIndex });
-    // Small delay to respect ML rate limits (~50 req/s)
+    // Respect ML rate limits (~50 req/s) — 100ms between real publishes
     if (!dryRun) await new Promise((r) => setTimeout(r, 100));
   }
 
@@ -92,7 +75,7 @@ export async function publishBulkItems(
     results,
     totalPublished: results.filter((r) => r.status === 'published').length,
     totalFailed: results.filter((r) => r.status === 'failed').length,
-    totalSkipped: results.filter((r) => r.status === 'skipped').length,
+    totalSkipped: results.filter((r) => r.status === 'skipped' || r.status === 'preflight_failed' || r.status === 'skipped_invalid').length,
     dryRun,
   };
 }

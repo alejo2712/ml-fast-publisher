@@ -2,17 +2,25 @@
  * POST /api/ml/publish
  * Validates + publishes items. Records result in publish_history.
  * Secrets never leave the server.
+ *
+ * Per-item flow (real mode):
+ *   1. Payload validation  → skipped_invalid if fails
+ *   2. Image preparation   → skipped_invalid if blocks real publish
+ *   3. Preflight check     → preflight_failed if any error check fails
+ *   4. Publish to ML       → published | failed
+ *
+ * Failures do NOT abort the remaining items — each item is independent.
  */
 import { type NextRequest, NextResponse } from 'next/server';
 import { getCredentials, refreshAccessToken } from '@/lib/mercadolibre/auth';
-import { publishBulkItems, isDryRun } from '@/lib/mercadolibre/publish';
+import { publishSingleItem, isDryRun } from '@/lib/mercadolibre/publish';
 import { runPreflight } from '@/lib/mercadolibre/preflight';
 import { prepareImages } from '@/lib/images/prepare-images';
 import { getDeploymentEnvironment } from '@/lib/env/runtime';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
 import type { MLPayload } from '@/types';
-import type { PreflightResult } from '@/lib/mercadolibre/types';
+import type { MLPublishResult, MLBulkPublishResult, PreflightResult } from '@/lib/mercadolibre/types';
 
 interface PublishRequestItem {
   payload: MLPayload;
@@ -31,95 +39,9 @@ export async function POST(request: NextRequest) {
 
   const dryRun = isDryRun();
   const items: PublishRequestItem[] = body.items;
+  const environment = getDeploymentEnvironment();
 
-  // Hard safety limit: real publishes are restricted to 1 item at a time.
-  // Bulk real publishing is intentionally disabled — too risky without per-row review.
-  if (!dryRun && items.length > 1) {
-    return NextResponse.json(
-      {
-        error: 'Publicación real limitada a 1 ítem por vez. Publicación masiva real no está habilitada.',
-        hint: 'Para publicar varios ítems reales, publicá uno por uno desde la pantalla de revisión.',
-      },
-      { status: 422 }
-    );
-  }
-  // Preflight result per item (stored in history for real publishes)
-  const preflightResults: (PreflightResult | null)[] = new Array(items.length).fill(null);
-
-  // ── Server-side payload validation ────────────────────────────────────────
-  const validationErrors: { rowIndex?: number; errors: string[] }[] = [];
-  for (const item of items) {
-    const errors: string[] = [];
-    if (!item.payload?.title || item.payload.title.trim().length < 10) errors.push('title: demasiado corto');
-    if (!item.payload?.price || item.payload.price <= 0) errors.push('price: debe ser mayor a 0');
-    if (!item.payload?.category_id) errors.push('category_id: faltante');
-    if (!item.payload?.condition) errors.push('condition: faltante');
-    if (errors.length > 0) validationErrors.push({ rowIndex: item.rowIndex, errors });
-  }
-  if (validationErrors.length > 0) {
-    return NextResponse.json({ error: 'Validation failed', validationErrors }, { status: 422 });
-  }
-
-  // ── Image preparation ─────────────────────────────────────────────────────
-  // Run per item; collect all image errors before proceeding.
-  const imageIssues: { rowIndex?: number; errors: string[]; warnings: string[] }[] = [];
-
-  for (const item of items) {
-    const rawPaths = (item.payload.pictures ?? []).map((p) => p.source);
-    const imgResult = prepareImages(rawPaths, dryRun);
-
-    if (imgResult.errors.length > 0) {
-      imageIssues.push({ rowIndex: item.rowIndex, errors: imgResult.errors, warnings: imgResult.warnings });
-    }
-
-    if (!imgResult.blockRealPublish) {
-      // Replace pictures with prepared (possibly converted) sources
-      item.payload = {
-        ...item.payload,
-        pictures: imgResult.prepared.map((p) => ({ source: p.source })),
-      };
-    }
-  }
-
-  if (imageIssues.length > 0) {
-    return NextResponse.json(
-      {
-        error: 'Imágenes no publicables para publicación real en Mercado Libre.',
-        imageErrors: imageIssues,
-        hint: 'Usá URLs HTTPS externas o configurá IMAGE_PUBLIC_BASE_URL con la dirección pública del servidor.',
-      },
-      { status: 422 }
-    );
-  }
-
-  // ── Preflight check (real publish only) ──────────────────────────────────
-  // Run per-item preflight and return early if any blocking issues found.
-  if (!dryRun && userId) {
-    for (let i = 0; i < items.length; i++) {
-      const pf = await runPreflight(userId, items[i].payload);
-      preflightResults[i] = pf;
-      if (!pf.ready) {
-        // Persist as PREFLIGHT_FAILED before returning error
-        await prisma.publishHistory.create({
-          data: {
-            userId,
-            draftId: items[i].draftId ?? null,
-            status: 'PREFLIGHT_FAILED',
-            dryRun: false,
-            payload: items[i].payload as object,
-            errorMessage: pf.checks.filter(c => c.status === 'error').map(c => c.detail).join('; '),
-            preflightResult: pf as object,
-          },
-        }).catch(() => { /* non-blocking */ });
-        return NextResponse.json({
-          error: 'Preflight fallido — corregí los problemas antes de publicar',
-          preflight: pf,
-        }, { status: 422 });
-      }
-    }
-  }
-
-  // ── Credentials & token refresh ───────────────────────────────────────────
+  // ── Credentials & token refresh (once, before the per-item loop) ──────────
   const credentials = getCredentials();
   if (!credentials && !dryRun) {
     return NextResponse.json({ error: 'ML credentials not configured.' }, { status: 503 });
@@ -152,7 +74,6 @@ export async function POST(request: NextRequest) {
       }
       try {
         tokens = await refreshAccessToken(tokens, credentials);
-        // Only update refreshToken in DB if the new response returned one
         const refreshData: { accessToken: string; expiresAt: Date; refreshToken?: string } = {
           accessToken: tokens.accessToken,
           expiresAt: new Date(tokens.expiresAt),
@@ -171,38 +92,161 @@ export async function POST(request: NextRequest) {
     accessToken = tokens.accessToken;
   }
 
-  // ── Publish ───────────────────────────────────────────────────────────────
+  // ── Per-item loop ─────────────────────────────────────────────────────────
+  const results: MLPublishResult[] = [];
   const publishStart = Date.now();
-  const result = await publishBulkItems(items, accessToken);
-  const publishDurationMs = Date.now() - publishStart;
-  const environment = getDeploymentEnvironment();
 
-  if (userId) {
-    await Promise.allSettled(
-      result.results.map((r, i) => {
-        const item = items[i];
-        const rawPaths = (item.payload.pictures ?? []).map((p) => p.source);
-        const imgPrep = prepareImages(rawPaths, dryRun);
-        return prisma.publishHistory.create({
+  for (const item of items) {
+    const { rowIndex, draftId } = item;
+    let preflightResult: PreflightResult | null = null;
+
+    // 1. Payload validation
+    const payloadErrors: string[] = [];
+    if (!item.payload?.title || item.payload.title.trim().length < 10)
+      payloadErrors.push('title: demasiado corto (mínimo 10 caracteres)');
+    if (!item.payload?.price || item.payload.price <= 0)
+      payloadErrors.push('price: debe ser mayor a 0');
+    if (!item.payload?.category_id)
+      payloadErrors.push('category_id: faltante');
+    if (!item.payload?.condition)
+      payloadErrors.push('condition: faltante');
+
+    if (payloadErrors.length > 0) {
+      const result: MLPublishResult = {
+        rowIndex,
+        status: 'skipped_invalid',
+        message: `Payload inválido: ${payloadErrors.join('; ')}`,
+      };
+      results.push(result);
+      if (userId) {
+        prisma.publishHistory.create({
           data: {
-            userId,
-            draftId: item.draftId ?? null,
-            mlItemId: r.itemId ?? null,
-            permalink: r.permalink ?? null,
-            status: r.status === 'published' ? 'PUBLISHED' : r.status === 'dry_run' ? 'DRY_RUN' : 'FAILED',
-            dryRun,
+            userId, draftId: draftId ?? null,
+            status: 'VALIDATION_FAILED', dryRun,
             payload: item.payload as object,
-            errorMessage: r.status === 'failed' ? r.message : null,
-            preflightResult: preflightResults[i] ? (preflightResults[i] as object) : undefined,
-            imagePrepResult: imgPrep as object,
-            mlResponse: r.mlResponse ? (r.mlResponse as object) : undefined,
+            errorMessage: result.message,
             environment,
-            durationMs: Math.round(publishDurationMs / items.length),
           },
-        });
-      })
-    );
+        }).catch(() => {});
+      }
+      continue;
+    }
+
+    // 2. Image preparation
+    const rawPaths = (item.payload.pictures ?? []).map((p) => p.source);
+    const imgPrep = prepareImages(rawPaths, dryRun);
+
+    if (imgPrep.blockRealPublish) {
+      const errMsg = imgPrep.errors[0] ?? 'Imágenes no publicables en modo real';
+      const result: MLPublishResult = {
+        rowIndex,
+        status: 'skipped_invalid',
+        message: errMsg,
+      };
+      results.push(result);
+      if (userId) {
+        prisma.publishHistory.create({
+          data: {
+            userId, draftId: draftId ?? null,
+            status: 'VALIDATION_FAILED', dryRun,
+            payload: item.payload as object,
+            errorMessage: errMsg,
+            imagePrepResult: imgPrep as object,
+            environment,
+          },
+        }).catch(() => {});
+      }
+      continue;
+    }
+
+    // Replace pictures with prepared (possibly rewritten) sources
+    item.payload = {
+      ...item.payload,
+      pictures: imgPrep.prepared.map((p) => ({ source: p.source })),
+    };
+
+    // 3. Preflight (real mode only) — skip item if any blocking check fails
+    if (!dryRun && userId) {
+      preflightResult = await runPreflight(userId, item.payload);
+      if (!preflightResult.ready) {
+        const errMsg = preflightResult.checks
+          .filter((c) => c.status === 'error')
+          .map((c) => c.detail)
+          .join('; ');
+        const result: MLPublishResult = {
+          rowIndex,
+          status: 'preflight_failed',
+          message: `Preflight fallido: ${errMsg}`,
+        };
+        results.push(result);
+        if (userId) {
+          prisma.publishHistory.create({
+            data: {
+              userId, draftId: draftId ?? null,
+              status: 'PREFLIGHT_FAILED', dryRun: false,
+              payload: item.payload as object,
+              errorMessage: errMsg,
+              preflightResult: preflightResult as object,
+              imagePrepResult: imgPrep as object,
+              environment,
+            },
+          }).catch(() => {});
+        }
+        continue;
+      }
+    }
+
+    // 4. Publish
+    const itemStart = Date.now();
+    const result = await publishSingleItem(item.payload, accessToken);
+    const durationMs = Date.now() - itemStart;
+
+    results.push({ ...result, rowIndex });
+
+    // Respect ML rate limits between real publishes
+    if (!dryRun) await new Promise((r) => setTimeout(r, 100));
+
+    // Record in history
+    if (userId) {
+      const historyStatus =
+        result.status === 'published' ? 'PUBLISHED' :
+        result.status === 'dry_run' ? 'DRY_RUN' :
+        'FAILED';
+
+      prisma.publishHistory.create({
+        data: {
+          userId,
+          draftId: draftId ?? null,
+          mlItemId: result.itemId ?? null,
+          permalink: result.permalink ?? null,
+          status: historyStatus,
+          dryRun,
+          payload: item.payload as object,
+          errorMessage: result.status === 'failed' ? result.message : null,
+          preflightResult: preflightResult ? (preflightResult as object) : undefined,
+          imagePrepResult: imgPrep as object,
+          mlResponse: result.mlResponse ? (result.mlResponse as object) : undefined,
+          environment,
+          durationMs,
+        },
+      }).catch(() => {});
+    }
   }
 
-  return NextResponse.json(result);
+  const totalPublished = results.filter((r) => r.status === 'published').length;
+  const totalDryRun = results.filter((r) => r.status === 'dry_run').length;
+  const totalFailed = results.filter((r) => r.status === 'failed').length;
+  const totalSkipped = results.filter((r) =>
+    r.status === 'skipped' || r.status === 'preflight_failed' || r.status === 'skipped_invalid'
+  ).length;
+
+  const bulkResult: MLBulkPublishResult = {
+    results,
+    totalPublished: totalPublished + totalDryRun,
+    totalFailed,
+    totalSkipped,
+    dryRun,
+  };
+
+  return NextResponse.json(bulkResult);
 }
