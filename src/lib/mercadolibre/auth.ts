@@ -53,7 +53,8 @@ export async function exchangeCodeForTokens(
   const data = await res.json();
   return {
     accessToken: data.access_token,
-    refreshToken: data.refresh_token,
+    // ML does not always return a refresh_token — treat absence as null
+    refreshToken: data.refresh_token ?? null,
     expiresAt: Date.now() + data.expires_in * 1000,
     userId: String(data.user_id),
   };
@@ -63,6 +64,12 @@ export async function refreshAccessToken(
   tokens: MLTokens,
   credentials: MLCredentials
 ): Promise<MLTokens> {
+  if (!tokens.refreshToken) {
+    throw new Error(
+      'No hay refresh token disponible. Reconectá la cuenta en /settings/mercadolibre.'
+    );
+  }
+
   const res = await fetch(`${ML_API_BASE}/oauth/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },

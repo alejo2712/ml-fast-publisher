@@ -144,18 +144,27 @@ export async function POST(request: NextRequest) {
     };
 
     if (credentials && tokens.expiresAt - Date.now() < 5 * 60 * 1000) {
+      if (!tokens.refreshToken) {
+        return NextResponse.json(
+          { error: 'El token de acceso está vencido y no hay refresh token. Reconectá la cuenta en /settings/mercadolibre.' },
+          { status: 401 }
+        );
+      }
       try {
         tokens = await refreshAccessToken(tokens, credentials);
+        // Only update refreshToken in DB if the new response returned one
+        const refreshData: { accessToken: string; expiresAt: Date; refreshToken?: string } = {
+          accessToken: tokens.accessToken,
+          expiresAt: new Date(tokens.expiresAt),
+        };
+        if (tokens.refreshToken) refreshData.refreshToken = tokens.refreshToken;
         await prisma.mercadoLibreAccount.update({
           where: { userId_siteId: { userId, siteId: credentials.siteId } },
-          data: {
-            accessToken: tokens.accessToken,
-            refreshToken: tokens.refreshToken,
-            expiresAt: new Date(tokens.expiresAt),
-          },
+          data: refreshData,
         });
-      } catch {
-        return NextResponse.json({ error: 'Token refresh failed. Reconnect Mercado Libre.' }, { status: 401 });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Token refresh failed.';
+        return NextResponse.json({ error: msg }, { status: 401 });
       }
     }
 

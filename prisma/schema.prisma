@@ -78,7 +78,7 @@ model MercadoLibreAccount {
   mlUserId     String   @map("ml_user_id")
   siteId       String   @default("MLA") @map("site_id")
   accessToken  String   @map("access_token") @db.Text
-  refreshToken String   @map("refresh_token") @db.Text
+  refreshToken String?  @map("refresh_token") @db.Text
   expiresAt    DateTime @map("expires_at")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")

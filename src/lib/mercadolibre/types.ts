@@ -9,7 +9,7 @@ export interface MLCredentials {
 
 export interface MLTokens {
   accessToken: string;
-  refreshToken: string;
+  refreshToken: string | null;
   expiresAt: number; // unix ms
   userId: string;
 }

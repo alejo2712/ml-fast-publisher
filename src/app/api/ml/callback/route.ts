@@ -44,19 +44,31 @@ export async function GET(request: NextRequest) {
     const session = await auth();
     const userId = session?.user?.id;
     if (userId) {
+      // On update: only overwrite refreshToken when ML returned one.
+      // If the new response has no refresh_token, preserve whatever was stored previously.
+      const updateData: {
+        mlUserId: string;
+        accessToken: string;
+        expiresAt: Date;
+        refreshToken?: string | null;
+      } = {
+        mlUserId: tokens.userId,
+        accessToken: tokens.accessToken,
+        expiresAt: new Date(tokens.expiresAt),
+      };
+      if (tokens.refreshToken !== null) {
+        updateData.refreshToken = tokens.refreshToken;
+      }
+
       await prisma.mercadoLibreAccount.upsert({
         where: { userId_siteId: { userId, siteId: credentials.siteId } },
-        update: {
-          mlUserId: tokens.userId,
-          accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken,
-          expiresAt: new Date(tokens.expiresAt),
-        },
+        update: updateData,
         create: {
           userId,
           siteId: credentials.siteId,
           mlUserId: tokens.userId,
           accessToken: tokens.accessToken,
+          // null is fine — schema is now nullable; preflight will warn if refresh is needed
           refreshToken: tokens.refreshToken,
           expiresAt: new Date(tokens.expiresAt),
         },
