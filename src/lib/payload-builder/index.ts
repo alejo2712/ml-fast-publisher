@@ -41,6 +41,13 @@ export function buildProductDraft(
       localPickUp: false,
       freeShipping: false,
     },
+    // Extended ML attributes — passed through from overrides (CSV or assisted flow)
+    gtin: overrides.gtin,
+    manufacturer: overrides.manufacturer,
+    powerSupplyType: overrides.powerSupplyType,
+    requiresAssembly: overrides.requiresAssembly,
+    includesAssemblyManual: overrides.includesAssemblyManual,
+    officialCategoryId: overrides.officialCategoryId,
   };
 }
 
