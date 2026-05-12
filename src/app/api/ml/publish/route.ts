@@ -13,7 +13,7 @@
  */
 import { type NextRequest, NextResponse } from 'next/server';
 import { getCredentials, refreshAccessToken } from '@/lib/mercadolibre/auth';
-import { publishSingleItem, isDryRun } from '@/lib/mercadolibre/publish';
+import { publishSingleItem, verifyPublishedItem, isDryRun } from '@/lib/mercadolibre/publish';
 import { runPreflight } from '@/lib/mercadolibre/preflight';
 import { enrichPayload, type MissingAttr } from '@/lib/mercadolibre/payload-enricher';
 import { logger } from '@/lib/logger';
@@ -30,6 +30,8 @@ interface PublishRequestItem {
   draftId?: string;
   /** Optional ML category ID override — skips category prediction when present */
   officialCategoryId?: string;
+  /** Appliance type (e.g. "microwave") — used to validate resolved category compatibility */
+  productType?: string;
 }
 
 export async function POST(request: NextRequest) {
@@ -207,15 +209,21 @@ export async function POST(request: NextRequest) {
         item.payload,
         item.payload.title,
         item.officialCategoryId,
-        accessToken
+        accessToken,
+        item.productType
       );
       item.payload = enriched.payload;
       missingAttrs = enriched.missingRequired;
 
-      // Block publish if non-conditional required attributes are still missing after defaults
+      // Block publish if category is incompatible or non-conditional required attributes are missing
       if (enriched.hasBlockingMissing) {
-        const blocking = enriched.missingRequired.filter((m) => !m.conditionalRequired);
-        const msg = `Atributos ML obligatorios faltantes: ${blocking.map((m) => `${m.id} (${m.name})`).join(', ')}`;
+        let msg: string;
+        if (enriched.categoryIncompatibilityReason) {
+          msg = `Categoría ML incompatible con el tipo de producto "${item.productType}": ${enriched.categoryIncompatibilityReason} Especificá el ID correcto en la columna categoria_ml.`;
+        } else {
+          const blocking = enriched.missingRequired.filter((m) => !m.conditionalRequired);
+          msg = `Atributos ML obligatorios faltantes: ${blocking.map((m) => `${m.id} (${m.name})`).join(', ')}`;
+        }
         logger.warn('publish', msg);
         const result: MLPublishResult = {
           rowIndex,
@@ -246,11 +254,27 @@ export async function POST(request: NextRequest) {
     const result = await publishSingleItem(item.payload, accessToken);
     const durationMs = Date.now() - itemStart;
 
+    // 6. Post-publish verification — GET /items/{id} to detect early rejection/reclassification
+    let mlItemVerification = null;
+    if (!dryRun && result.status === 'published' && result.itemId) {
+      // Brief pause so ML has time to process the item before we query its state
+      await new Promise((r) => setTimeout(r, 1500));
+      mlItemVerification = await verifyPublishedItem(result.itemId, accessToken);
+      if (mlItemVerification) {
+        logger.info('publish', `Post-publish verification for ${result.itemId}`, {
+          status: mlItemVerification.status,
+          subStatus: mlItemVerification.subStatus,
+          categoryId: mlItemVerification.categoryId,
+        });
+      }
+    }
+
     results.push({
       ...result,
       rowIndex,
       // Include any conditional-required attrs that are still missing (informational — didn't block)
       ...(missingAttrs.length > 0 ? { missingAttributes: missingAttrs } : {}),
+      ...(mlItemVerification ? { mlItemVerification } : {}),
     });
 
     // Respect ML rate limits between real publishes
@@ -276,6 +300,9 @@ export async function POST(request: NextRequest) {
           preflightResult: preflightResult ? (preflightResult as object) : undefined,
           imagePrepResult: imgPrep as object,
           mlResponse: result.mlResponse ? (result.mlResponse as object) : undefined,
+          mlItemStatus: mlItemVerification?.status ?? null,
+          mlItemSubStatus: mlItemVerification ? JSON.stringify(mlItemVerification.subStatus) : null,
+          mlItemCategoryId: mlItemVerification?.categoryId ?? null,
           environment,
           durationMs,
         },

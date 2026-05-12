@@ -6,8 +6,8 @@
  */
 
 import type { MLPayload } from '@/types';
-import type { MLPublishResult, MLBulkPublishResult } from './types';
-import { mlPost, MLApiError } from './client';
+import type { MLPublishResult, MLBulkPublishResult, MLItemVerification } from './types';
+import { mlGet, mlPost, MLApiError } from './client';
 
 export function isDryRun(): boolean {
   // Default to true — must explicitly set to "false" to publish for real
@@ -18,7 +18,31 @@ interface MLItemResponse {
   id: string;
   permalink: string;
   status: string;
+  sub_status?: string[];
+  category_id?: string;
   [key: string]: unknown;
+}
+
+/**
+ * GET /items/{itemId} — verify item state immediately after publish.
+ * ML can finalize, close, or change the category of a newly published item
+ * within seconds. Call this ~1s after publish to catch early rejections.
+ */
+export async function verifyPublishedItem(
+  itemId: string,
+  accessToken: string
+): Promise<MLItemVerification | null> {
+  try {
+    const item = await mlGet<MLItemResponse>(`/items/${itemId}`, accessToken);
+    return {
+      status: item.status,
+      subStatus: item.sub_status ?? [],
+      categoryId: item.category_id ?? null,
+      verified: true,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function publishSingleItem(
