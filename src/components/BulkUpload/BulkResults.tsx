@@ -7,6 +7,7 @@ import type { ProductDraft } from '@/types';
 import {
   CheckCircle2, AlertTriangle, XCircle, Download, ChevronDown, ChevronRight,
   Send, FlaskConical, Loader2, Clock, Pencil, X, Check, ShieldOff, ExternalLink, Hash, SkipForward,
+  Info,
 } from 'lucide-react';
 import { useState, useEffect, useCallback, useRef, memo } from 'react';
 import { cn } from '@/components/ui';
@@ -639,9 +640,19 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
   const [showBulkConfirm, setShowBulkConfirm] = useState(false);
   const [realConfirmed, setRealConfirmed] = useState(false);
   const [publishSummary, setPublishSummary] = useState<BulkPublishSummary | null>(null);
+  const [errorsExpanded, setErrorsExpanded] = useState(totalErrors > 0);
   // ML CDN URLs resolved during pre-publish image upload — keyed by original filename (lowercase)
   const [mlImageUrls, setMlImageUrls] = useState<Map<string, string>>(new Map());
   const [imageUploadErrors, setImageUploadErrors] = useState<Map<string, string>>(new Map());
+
+  // Auto-expand errors section when errors are introduced
+  const prevErrorCount = useRef(totalErrors);
+  useEffect(() => {
+    if (totalErrors > 0 && totalErrors !== prevErrorCount.current) {
+      setErrorsExpanded(true);
+    }
+    prevErrorCount.current = totalErrors;
+  }, [totalErrors]);
 
   useEffect(() => {
     fetch('/api/ml/status')
@@ -669,9 +680,12 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
     });
   }
 
-  // Publish error rows are skipped; warning rows (missing optional fields) are included
+  // Error rows are skipped; warning rows (missing optional fields) are included.
+  // The publish button always shows — it only disables when ZERO rows are publishable.
   const publishableRows = rows.filter((r) => r.status !== 'error' && r.payload !== null);
+  const errorRows = rows.filter((r) => r.status === 'error');
   const exportableCount = rows.filter((r) => r.payload !== null).length;
+  const hasPartialErrors = errorRows.length > 0 && publishableRows.length > 0;
 
   async function handleBulkPublish() {
     setShowBulkConfirm(false);
@@ -884,59 +898,185 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
         </div>
       )}
 
-      {/* Summary bar */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-1.5 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg">
-          <CheckCircle2 size={14} />
-          <span className="font-semibold">{totalOk}</span> listos
-        </div>
-        {totalWarnings > 0 && (
-          <div className="flex items-center gap-1.5 text-sm text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-lg">
-            <AlertTriangle size={14} />
-            <span className="font-semibold">{totalWarnings}</span> incompletos
+      {/* Summary panel */}
+      <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 space-y-3">
+        {/* Counts row */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 text-sm text-emerald-700 bg-white border border-emerald-200 px-3 py-1.5 rounded-lg">
+            <CheckCircle2 size={14} />
+            <span className="font-semibold">{totalOk + totalWarnings}</span>
+            <span className="text-emerald-600">{totalOk + totalWarnings === 1 ? 'válido' : 'válidos'}</span>
           </div>
-        )}
-        {totalErrors > 0 && (
-          <div className="flex items-center gap-1.5 text-sm text-red-700 bg-red-50 border border-red-200 px-3 py-1.5 rounded-lg">
-            <XCircle size={14} />
-            <span className="font-semibold">{totalErrors}</span> con errores
-          </div>
-        )}
-
-        <div className="ml-auto flex gap-2 flex-wrap">
-          <button
-            onClick={onReset}
-            disabled={isBulkPublishing}
-            className="text-sm text-gray-500 hover:text-gray-700 px-3 py-1.5 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors disabled:opacity-50"
-          >
-            Nueva carga
-          </button>
-          {exportableCount > 0 && (
-            <button
-              onClick={() => exportAllPayloads(rows)}
-              disabled={isBulkPublishing}
-              className="flex items-center gap-1.5 text-sm bg-gray-700 hover:bg-gray-800 text-white px-3 py-1.5 rounded-lg font-medium transition-colors disabled:opacity-50"
-            >
-              <Download size={14} />
-              Exportar JSON
-            </button>
+          {totalWarnings > 0 && (
+            <div className="flex items-center gap-1.5 text-sm text-amber-700 bg-white border border-amber-200 px-3 py-1.5 rounded-lg">
+              <AlertTriangle size={14} />
+              <span className="font-semibold">{totalWarnings}</span>
+              <span className="text-amber-600">con advertencias</span>
+            </div>
           )}
-          {publishableRows.length > 0 && (
+          {totalErrors > 0 && (
+            <div className="flex items-center gap-1.5 text-sm text-red-700 bg-white border border-red-200 px-3 py-1.5 rounded-lg">
+              <XCircle size={14} />
+              <span className="font-semibold">{totalErrors}</span>
+              <span className="text-red-600">{totalErrors === 1 ? 'con error' : 'con errores'}</span>
+            </div>
+          )}
+
+          <div className="ml-auto flex gap-2 flex-wrap">
+            <button
+              onClick={onReset}
+              disabled={isBulkPublishing}
+              className="text-sm text-gray-500 hover:text-gray-700 px-3 py-1.5 rounded-lg border border-gray-200 bg-white hover:border-gray-300 transition-colors disabled:opacity-50"
+            >
+              Nueva carga
+            </button>
+            {exportableCount > 0 && (
+              <button
+                onClick={() => exportAllPayloads(rows)}
+                disabled={isBulkPublishing}
+                className="flex items-center gap-1.5 text-sm bg-gray-700 hover:bg-gray-800 text-white px-3 py-1.5 rounded-lg font-medium transition-colors disabled:opacity-50"
+              >
+                <Download size={14} />
+                Exportar JSON
+              </button>
+            )}
+            {/* Publish button — always visible, disabled only when 0 publishable rows */}
             <button
               onClick={() => setShowBulkConfirm(true)}
-              disabled={isBulkPublishing}
-              className="flex items-center gap-1.5 text-sm font-semibold px-4 py-1.5 rounded-lg transition-all bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={isBulkPublishing || publishableRows.length === 0}
+              className={cn(
+                'flex items-center gap-1.5 text-sm font-semibold px-4 py-1.5 rounded-lg transition-all text-white disabled:opacity-50 disabled:cursor-not-allowed',
+                publishableRows.length === 0
+                  ? 'bg-gray-400 cursor-not-allowed'
+                  : 'bg-indigo-600 hover:bg-indigo-700'
+              )}
             >
               {isBulkPublishing
                 ? <><Loader2 size={14} className="animate-spin" /> Publicando...</>
                 : mlDryRun
-                ? <><FlaskConical size={14} /> Simular {publishableRows.length} — modo prueba</>
+                ? <><FlaskConical size={14} /> Simular {publishableRows.length}{hasPartialErrors ? ' válidos' : ''} — modo prueba</>
+                : publishableRows.length === 0
+                ? <><XCircle size={14} /> Sin productos válidos</>
+                : hasPartialErrors
+                ? <><Send size={14} /> Publicar {publishableRows.length} productos válidos</>
                 : <><Send size={14} /> Publicar {publishableRows.length} en Mercado Libre</>
               }
             </button>
+          </div>
+        </div>
+
+        {/* Skip notice — shown when some rows will be skipped */}
+        {hasPartialErrors && !isBulkPublishing && (
+          <div className="flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            <Info size={12} className="shrink-0 mt-0.5 text-amber-600" />
+            <span>
+              <span className="font-semibold">{errorRows.length} {errorRows.length === 1 ? 'producto con error' : 'productos con errores'} se omitirán</span>{' '}
+              automáticamente. Corregí los errores o publicá solo los válidos.
+            </span>
+          </div>
+        )}
+
+        {/* All invalid notice */}
+        {publishableRows.length === 0 && rows.length > 0 && (
+          <div className="flex items-start gap-2 text-xs text-red-800 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            <XCircle size={12} className="shrink-0 mt-0.5 text-red-500" />
+            <span>
+              <span className="font-semibold">Todos los productos tienen errores.</span>{' '}
+              Corregí los errores antes de publicar.
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Error detail section — auto-expanded when errors exist */}
+      {errorRows.length > 0 && (
+        <div className="rounded-xl border border-red-200 overflow-hidden">
+          <button
+            onClick={() => setErrorsExpanded((v) => !v)}
+            className="w-full flex items-center justify-between px-4 py-3 bg-red-50 hover:bg-red-100 transition-colors text-left"
+          >
+            <div className="flex items-center gap-2">
+              <XCircle size={15} className="text-red-500 shrink-0" />
+              <span className="text-sm font-semibold text-red-800">
+                {errorRows.length === 1 ? '1 producto con error' : `${errorRows.length} productos con errores`}
+                {' '}
+                <span className="font-normal text-red-600">— se omitirán al publicar</span>
+              </span>
+            </div>
+            {errorsExpanded ? <ChevronDown size={14} className="text-red-400" /> : <ChevronRight size={14} className="text-red-400" />}
+          </button>
+
+          {errorsExpanded && (
+            <div className="divide-y divide-red-100 bg-white">
+              {errorRows.map((row) => (
+                <div key={row.rowIndex} className="px-4 py-3 space-y-2">
+                  {/* Row title */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-400 font-mono w-6 shrink-0">#{row.rowIndex}</span>
+                    <span className="text-sm font-medium text-gray-800 truncate">
+                      {row.draft?.title || row.rawRow['descripcion_corta'] || '(sin título)'}
+                    </span>
+                    {row.draft?.price && (
+                      <span className="text-xs text-gray-500 shrink-0">${row.draft.price.toLocaleString('es-AR')}</span>
+                    )}
+                  </div>
+
+                  {/* Error list */}
+                  <div className="pl-8 space-y-1">
+                    {row.errors.map((e, i) => (
+                      <div key={i} className="flex items-start gap-1.5 text-xs text-red-700">
+                        <XCircle size={11} className="shrink-0 mt-0.5 text-red-400" />
+                        <span>{e}</span>
+                      </div>
+                    ))}
+                    {row.missingFields.length > 0 && (
+                      <div className="flex items-start gap-1.5 text-xs text-amber-700">
+                        <AlertTriangle size={11} className="shrink-0 mt-0.5 text-amber-500" />
+                        <span>Campos obligatorios faltantes: {row.missingFields.map((f) => f.label).join(', ')}</span>
+                      </div>
+                    )}
+                    {/* Local image refs that caused errors */}
+                    {row.localImageRefs.length > 0 && (
+                      <div className="flex items-start gap-1.5 text-xs text-gray-600">
+                        <Info size={11} className="shrink-0 mt-0.5 text-gray-400" />
+                        <span>
+                          Imágenes locales: {row.localImageRefs.join(', ')}{' '}
+                          {imageFiles && imageFiles.size > 0
+                            ? row.localImageRefs.every((f) => imageFiles.has(f.toLowerCase()))
+                              ? <span className="text-emerald-600">✓ archivos cargados</span>
+                              : <span className="text-red-600">— algunos archivos no encontrados</span>
+                            : <span className="text-amber-600">— arrastrá los archivos de imagen al área de carga</span>
+                          }
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Quick edit link */}
+                  {row.draft && (
+                    <div className="pl-8">
+                      <button
+                        onClick={() => {
+                          setEditingRows((prev) => { const n = new Set(prev); n.add(row.rowIndex); return n; });
+                          setExpandedRows((prev) => { const n = new Set(prev); n.add(row.rowIndex); return n; });
+                          // Scroll into row list
+                          setTimeout(() => {
+                            document.getElementById(`row-${row.rowIndex}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                          }, 50);
+                        }}
+                        className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-medium"
+                      >
+                        <Pencil size={10} />
+                        Editar fila
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           )}
         </div>
-      </div>
+      )}
 
       {/* Post-publish summary panel */}
       {hasPublishResults && publishSummary && (
@@ -1132,7 +1272,7 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
             'bg-red-50/30';
 
           return (
-            <div key={row.rowIndex} className={cn('transition-colors', rowBg)}>
+            <div key={row.rowIndex} id={`row-${row.rowIndex}`} className={cn('transition-colors', rowBg)}>
               {/* Row header */}
               <div className="flex items-center gap-2 px-4 py-3">
                 <button onClick={() => toggleRow(row.rowIndex)} className="flex items-center gap-2 flex-1 min-w-0 text-left hover:opacity-80 transition-opacity">

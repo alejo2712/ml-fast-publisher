@@ -19,10 +19,15 @@ function isGarbage(value: string): boolean {
  * Accepts:
  * - https:// and http:// URLs (external images)
  * - /uploads/... paths (locally uploaded images, served from public/)
+ * - local image filenames (e.g. heladera-frente.jpg) — uploaded to ML CDN at publish time
  */
 function isValidImageRef(value: string): boolean {
   const v = value.trim();
+  if (!v) return false;
   if (v.startsWith('/uploads/')) return true;
+  // Local filename with image extension — file picker upload, will go to ML CDN at publish time.
+  // Must not contain path separators (a bare filename, not a path).
+  if (/\.(jpe?g|png|webp|gif)$/i.test(v) && !v.includes('/') && !v.includes('\\')) return true;
   try {
     const url = new URL(v);
     return url.protocol === 'http:' || url.protocol === 'https:';
@@ -180,14 +185,27 @@ function getDraftFieldValue(draft: ProductDraft, attributeId: string): string | 
     MODEL: 'model',
     COLOR: 'color',
     VOLTAGE: 'voltage',
+    // Capacity — multiple ML attr IDs map to ProductDraft.capacity
     CAPACITY: 'capacity',
+    TOTAL_CAPACITY: 'capacity',             // heladeras, freezers
+    WASHING_MACHINE_CAPACITY: 'capacity',   // lavarropas, secarropas
+    VOLUME_CAPACITY: 'capacity',            // microwave, blender, etc.
     POWER_CONSUMPTION: 'watts',
+    // Technology / defrost / type
     COOLING_TYPE: 'technology',
+    DEFROST_TYPE: 'technology',             // real ML attr ID for heladeras
+    DEFROST_SYSTEM: 'technology',           // legacy alias
+    LOAD_TYPE: 'technology',               // washing machine load type
     TYPE: 'technology',
     HEIGHT: 'height',
     WIDTH: 'width',
     DEPTH: 'depth',
     WEIGHT: 'weight',
+    // These are auto-injected by the payload builder — map to a field that will be non-empty
+    // when the product type is correct, preventing false "missing" warnings in the UI.
+    WITH_FREEZER: 'brand',        // always set for refrigerators; brand is required so it'll be non-empty
+    IS_MINIBAR: 'brand',
+    POWER_SUPPLY_TYPE: 'voltage',  // derived from voltage at payload-build time
   };
   const key = map[attributeId];
   if (!key) return undefined;
