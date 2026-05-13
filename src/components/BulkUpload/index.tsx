@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback } from 'react';
-import { Upload, ClipboardPaste, Download, FileText, Loader2, SkipForward, FileSpreadsheet } from 'lucide-react';
+import { Upload, ClipboardPaste, Download, FileText, Loader2, SkipForward, FileSpreadsheet, ImagePlus, X } from 'lucide-react';
 import { cn } from '@/components/ui';
 import { parseCsvText, parseXlsxBuffer, type CsvRowResult } from '@/lib/csv/parser';
 import { downloadCsvTemplate, downloadExcelTemplate, CSV_COLUMNS } from '@/lib/csv/template';
@@ -33,12 +33,16 @@ export function BulkUpload() {
   const [tab, setTab] = useState<InputTab>('upload');
   const [pasteText, setPasteText] = useState('');
   const [isDragging, setIsDragging] = useState(false);
+  const [isDraggingImages, setIsDraggingImages] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [rows, setRows] = useState<CsvRowResult[]>([]);
   const [summary, setSummary] = useState<{ ok: number; warnings: number; errors: number } | null>(null);
   const [fileName, setFileName] = useState('');
   const [skipInvalid, setSkipInvalid] = useState(false);
+  // Local image files uploaded alongside the Excel — keyed by filename (case-insensitive)
+  const [imageFiles, setImageFiles] = useState<Map<string, File>>(new Map());
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   async function processText(text: string, name = '') {
     setIsProcessing(true);
@@ -109,11 +113,42 @@ export function BulkUpload() {
     if (pasteText.trim()) processText(pasteText, 'pegado');
   }
 
+  function addImageFiles(files: FileList | File[]) {
+    const arr = Array.from(files);
+    const imageOnly = arr.filter((f) => /\.(jpe?g|png|webp|gif)$/i.test(f.name));
+    if (imageOnly.length === 0) return;
+    setImageFiles((prev) => {
+      const next = new Map(prev);
+      imageOnly.forEach((f) => next.set(f.name.toLowerCase(), f));
+      return next;
+    });
+  }
+
+  function removeImageFile(filename: string) {
+    setImageFiles((prev) => {
+      const next = new Map(prev);
+      next.delete(filename.toLowerCase());
+      return next;
+    });
+  }
+
+  function handleImageDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDraggingImages(false);
+    if (e.dataTransfer.files.length) addImageFiles(e.dataTransfer.files);
+  }
+
+  function handleImageInput(e: React.ChangeEvent<HTMLInputElement>) {
+    if (e.target.files) addImageFiles(e.target.files);
+    e.target.value = '';
+  }
+
   function reset() {
     setRows([]);
     setSummary(null);
     setPasteText('');
     setFileName('');
+    setImageFiles(new Map());
     if (fileInputRef.current) fileInputRef.current.value = '';
   }
 
@@ -140,9 +175,14 @@ export function BulkUpload() {
   }, []);
 
   if (rows.length > 0 && summary) {
+    // Count how many rows have local image refs that need matching
+    const rowsWithLocalImages = rows.filter((r) => r.localImageRefs.length > 0);
+    const allLocalRefs = [...new Set(rowsWithLocalImages.flatMap((r) => r.localImageRefs))];
+    const missingRefs = allLocalRefs.filter((ref) => !imageFiles.has(ref.toLowerCase()));
+
     return (
-      <div className="w-full max-w-3xl mx-auto space-y-2">
-        <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">
+      <div className="w-full max-w-3xl mx-auto space-y-4">
+        <div className="flex items-center gap-2 text-sm text-gray-500">
           {fileName.endsWith('.xlsx') || fileName.endsWith('.xls')
             ? <FileSpreadsheet size={14} className="text-emerald-600" />
             : <FileText size={14} />}
@@ -150,6 +190,91 @@ export function BulkUpload() {
           <span className="text-gray-300">·</span>
           <span>{rows.length} producto{rows.length !== 1 ? 's' : ''} procesado{rows.length !== 1 ? 's' : ''}</span>
         </div>
+
+        {/* Image upload panel — only shown when Excel references local image filenames */}
+        {allLocalRefs.length > 0 && (
+          <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <ImagePlus size={15} className="text-indigo-600 shrink-0" />
+              <p className="text-sm font-semibold text-indigo-900">
+                Tu Excel referencia {allLocalRefs.length} imagen{allLocalRefs.length !== 1 ? 's' : ''} local{allLocalRefs.length !== 1 ? 'es' : ''}
+              </p>
+              {missingRefs.length > 0 && (
+                <span className="ml-auto text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded-full px-2 py-0.5">
+                  {missingRefs.length} faltante{missingRefs.length !== 1 ? 's' : ''}
+                </span>
+              )}
+              {missingRefs.length === 0 && (
+                <span className="ml-auto text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5">
+                  Todas encontradas
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-indigo-700">
+              Subí las imágenes que referencia tu Excel. Se subirán a Mercado Libre antes de publicar.
+            </p>
+
+            {/* Image drop zone */}
+            <div
+              onDragEnter={(e) => { e.preventDefault(); setIsDraggingImages(true); }}
+              onDragOver={(e) => { e.preventDefault(); setIsDraggingImages(true); }}
+              onDragLeave={() => setIsDraggingImages(false)}
+              onDrop={handleImageDrop}
+              onClick={() => imageInputRef.current?.click()}
+              className={cn(
+                'border-2 border-dashed rounded-xl py-4 flex items-center justify-center gap-2 cursor-pointer transition-all text-sm',
+                isDraggingImages ? 'border-indigo-400 bg-indigo-100' : 'border-indigo-300 hover:border-indigo-400 hover:bg-indigo-50/80'
+              )}
+            >
+              <Upload size={14} className="text-indigo-400 shrink-0" />
+              <span className="text-indigo-600 font-medium">
+                {isDraggingImages ? 'Soltá las imágenes' : 'Arrastrá imágenes aquí o hacé click'}
+              </span>
+              <span className="text-indigo-400 text-xs">JPEG · PNG · WebP · max 5 MB</span>
+              <input ref={imageInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleImageInput} />
+            </div>
+
+            {/* Uploaded files list */}
+            {imageFiles.size > 0 && (
+              <div className="space-y-1">
+                {allLocalRefs.map((ref) => {
+                  const found = imageFiles.has(ref.toLowerCase());
+                  return (
+                    <div key={ref} className={cn(
+                      'flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs',
+                      found ? 'bg-emerald-50 border border-emerald-200 text-emerald-800' : 'bg-red-50 border border-red-200 text-red-700'
+                    )}>
+                      <span className="font-mono flex-1 truncate">{ref}</span>
+                      {found ? (
+                        <>
+                          <span className="text-emerald-600 font-medium shrink-0">Encontrada</span>
+                          <button onClick={() => removeImageFile(ref)} className="text-gray-400 hover:text-gray-600 shrink-0 ml-1">
+                            <X size={11} />
+                          </button>
+                        </>
+                      ) : (
+                        <span className="text-red-600 font-medium shrink-0">No encontrada</span>
+                      )}
+                    </div>
+                  );
+                })}
+                {/* Extra uploaded files not referenced in Excel */}
+                {Array.from(imageFiles.keys())
+                  .filter((k) => !allLocalRefs.map((r) => r.toLowerCase()).includes(k))
+                  .map((k) => (
+                    <div key={k} className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs bg-gray-50 border border-gray-200 text-gray-500">
+                      <span className="font-mono flex-1 truncate">{k}</span>
+                      <span className="text-gray-400 shrink-0">No referenciada</span>
+                      <button onClick={() => removeImageFile(k)} className="text-gray-400 hover:text-gray-600 shrink-0 ml-1">
+                        <X size={11} />
+                      </button>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+        )}
+
         <BulkResults
           rows={rows}
           totalOk={summary.ok}
@@ -157,6 +282,7 @@ export function BulkUpload() {
           totalErrors={summary.errors}
           onReset={reset}
           onRowEdit={handleRowEdit}
+          imageFiles={imageFiles}
         />
       </div>
     );
