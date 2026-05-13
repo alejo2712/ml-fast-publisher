@@ -27,6 +27,14 @@ interface RowPublishState {
   mlResponse?: unknown;
   /** ML attributes still missing after enrichment + defaults */
   missingAttributes?: Array<{ id: string; name: string; conditionalRequired: boolean }>;
+  /** Resolved ML category after enrichment */
+  resolvedCategoryId?: string;
+  resolvedCategoryPath?: string;
+  usedFallbackCategory?: boolean;
+  /** Post-publish item status from GET /items/{id} */
+  mlItemStatus?: string;
+  mlItemSubStatus?: string[];
+  postPublishWarning?: string;
 }
 
 // ─── Inline edit cell ────────────────────────────────────────────────────────
@@ -555,6 +563,7 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
         payload: r.payload!,
         rowIndex: r.rowIndex,
         officialCategoryId: r.draft?.officialCategoryId,
+        applianceType: r.draft?.applianceType,
       }));
       const res = await fetch('/api/ml/publish', {
         method: 'POST',

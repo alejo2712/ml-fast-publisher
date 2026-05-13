@@ -7,7 +7,7 @@
 
 import type { MLPayload } from '@/types';
 import type { MLPublishResult, MLBulkPublishResult } from './types';
-import { mlPost, MLApiError } from './client';
+import { mlPost, mlGet, MLApiError } from './client';
 
 export function isDryRun(): boolean {
   // Default to true — must explicitly set to "false" to publish for real
@@ -18,7 +18,37 @@ interface MLItemResponse {
   id: string;
   permalink: string;
   status: string;
+  sub_status?: string[];
   [key: string]: unknown;
+}
+
+/**
+ * After a successful publish, call GET /items/{id} to verify ML hasn't immediately
+ * closed/finalized the item (which happens when the category is wrong or item violates rules).
+ */
+async function checkPublishedItemStatus(
+  itemId: string,
+  accessToken: string
+): Promise<{ status: string; subStatus: string[]; warning?: string }> {
+  try {
+    const item = await mlGet<MLItemResponse>(`/items/${itemId}`, accessToken);
+    const status = item.status ?? 'unknown';
+    const subStatus = item.sub_status ?? [];
+
+    let warning: string | undefined;
+    if (status === 'closed') {
+      warning = `El ítem fue cerrado inmediatamente por ML (sub_status: ${subStatus.join(', ') || 'desconocido'}). Verificá que la categoría y atributos sean correctos.`;
+    } else if (status === 'under_review') {
+      warning = `El ítem quedó en revisión por ML (sub_status: ${subStatus.join(', ') || 'sin detalle'}).`;
+    } else if (subStatus.includes('deleted') || subStatus.includes('out_of_stock_paused')) {
+      warning = `El ítem fue publicado pero ML lo marcó como "${subStatus.join(', ')}".`;
+    }
+
+    return { status, subStatus, warning };
+  } catch {
+    // Non-fatal — don't fail the publish result if status check fails
+    return { status: 'unknown', subStatus: [] };
+  }
 }
 
 export async function publishSingleItem(
@@ -35,12 +65,21 @@ export async function publishSingleItem(
 
   try {
     const { data: item, rawBody } = await mlPost<MLItemResponse>('/items', accessToken, payload);
+
+    // Post-publish: check ML item status to detect immediate closure
+    const statusCheck = await checkPublishedItemStatus(item.id, accessToken);
+
     return {
       status: 'published',
       itemId: item.id,
       permalink: item.permalink,
-      message: `Publicado exitosamente. ID: ${item.id}`,
+      message: statusCheck.warning
+        ? `Publicado con advertencia: ${statusCheck.warning}`
+        : `Publicado exitosamente. ID: ${item.id}`,
       mlResponse: rawBody,
+      mlItemStatus: statusCheck.status,
+      mlItemSubStatus: statusCheck.subStatus,
+      postPublishWarning: statusCheck.warning,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Error desconocido al publicar.';
