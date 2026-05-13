@@ -21,7 +21,7 @@ import { prepareImages } from '@/lib/images/prepare-images';
 import { getDeploymentEnvironment } from '@/lib/env/runtime';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
-import type { MLPayload } from '@/types';
+import type { MLPayload, ApplianceType } from '@/types';
 import type { MLPublishResult, MLBulkPublishResult, PreflightResult } from '@/lib/mercadolibre/types';
 
 interface PublishRequestItem {
@@ -30,6 +30,8 @@ interface PublishRequestItem {
   draftId?: string;
   /** Optional ML category ID override — skips category prediction when present */
   officialCategoryId?: string;
+  /** Product type — used to validate resolved category path and prevent wrong-domain results */
+  applianceType?: ApplianceType;
 }
 
 export async function POST(request: NextRequest) {
@@ -202,15 +204,22 @@ export async function POST(request: NextRequest) {
 
     // 4. Enrich payload — resolve dynamic ML category + filter/fill attributes (real mode only)
     let missingAttrs: MissingAttr[] = [];
+    let resolvedCategoryId: string | undefined;
+    let resolvedCategoryPath: string | undefined;
+    let usedFallbackCategory = false;
     if (!dryRun) {
       const enriched = await enrichPayload(
         item.payload,
         item.payload.title,
         item.officialCategoryId,
-        accessToken
+        accessToken,
+        item.applianceType
       );
       item.payload = enriched.payload;
       missingAttrs = enriched.missingRequired;
+      resolvedCategoryId = enriched.resolution?.categoryId;
+      resolvedCategoryPath = enriched.categoryPath;
+      usedFallbackCategory = enriched.usedFallback;
 
       // Block publish if non-conditional required attributes are still missing after defaults
       if (enriched.hasBlockingMissing) {
@@ -222,6 +231,9 @@ export async function POST(request: NextRequest) {
           status: 'preflight_failed',
           message: msg,
           missingAttributes: enriched.missingRequired,
+          resolvedCategoryId,
+          resolvedCategoryPath,
+          usedFallbackCategory,
         };
         results.push(result);
         if (userId) {
@@ -233,6 +245,8 @@ export async function POST(request: NextRequest) {
               errorMessage: msg,
               preflightResult: preflightResult ? (preflightResult as object) : undefined,
               imagePrepResult: imgPrep as object,
+              mlCategoryId: resolvedCategoryId,
+              mlCategoryPath: resolvedCategoryPath,
               environment,
             },
           }).catch(() => {});
@@ -251,6 +265,9 @@ export async function POST(request: NextRequest) {
       rowIndex,
       // Include any conditional-required attrs that are still missing (informational — didn't block)
       ...(missingAttrs.length > 0 ? { missingAttributes: missingAttrs } : {}),
+      resolvedCategoryId,
+      resolvedCategoryPath,
+      usedFallbackCategory,
     });
 
     // Respect ML rate limits between real publishes
@@ -262,6 +279,10 @@ export async function POST(request: NextRequest) {
         result.status === 'published' ? 'PUBLISHED' :
         result.status === 'dry_run' ? 'DRY_RUN' :
         'FAILED';
+
+      const postPublishCheckResult = (result.mlItemStatus || result.mlItemSubStatus?.length)
+        ? { status: result.mlItemStatus, subStatus: result.mlItemSubStatus, warning: result.postPublishWarning }
+        : undefined;
 
       prisma.publishHistory.create({
         data: {
@@ -276,6 +297,11 @@ export async function POST(request: NextRequest) {
           preflightResult: preflightResult ? (preflightResult as object) : undefined,
           imagePrepResult: imgPrep as object,
           mlResponse: result.mlResponse ? (result.mlResponse as object) : undefined,
+          mlCategoryId: resolvedCategoryId,
+          mlCategoryPath: resolvedCategoryPath,
+          mlItemStatus: result.mlItemStatus,
+          mlItemSubStatus: result.mlItemSubStatus ?? [],
+          postPublishCheckResult: postPublishCheckResult as object | undefined,
           environment,
           durationMs,
         },

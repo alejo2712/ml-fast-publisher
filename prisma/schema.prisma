@@ -172,6 +172,13 @@ model PublishHistory {
   mlResponse      Json?         @map("ml_response")        // raw ML API response (success or error body)
   environment     String?       // "local" | "preview" | "production"
   durationMs      Int?          @map("duration_ms")         // publish round-trip duration
+  // ML category resolution — set after enrichment
+  mlCategoryId    String?       @map("ml_category_id")     // resolved ML category ID (after enrichment)
+  mlCategoryPath  String?       @map("ml_category_path") @db.Text  // human-readable path e.g. "Electrodomésticos > ..."
+  // Post-publish item status — from GET /items/{id} after successful publish
+  mlItemStatus    String?       @map("ml_item_status")     // e.g. "active", "closed", "under_review"
+  mlItemSubStatus String[]      @map("ml_item_sub_status") // e.g. ["deleted"], []
+  postPublishCheckResult Json?  @map("post_publish_check_result") // full check result object
   createdAt       DateTime      @default(now()) @map("created_at")
 
   user  User          @relation(fields: [userId], references: [id], onDelete: Cascade)

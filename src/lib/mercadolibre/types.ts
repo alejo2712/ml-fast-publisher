@@ -25,6 +25,18 @@ export interface MLPublishResult {
   mlResponse?: unknown;
   /** ML attributes that were still missing after applying defaults (conditional-required) */
   missingAttributes?: Array<{ id: string; name: string; conditionalRequired: boolean }>;
+  /** ML item status from post-publish GET /items/{id} check */
+  mlItemStatus?: string;
+  /** ML item sub_status array from post-publish check */
+  mlItemSubStatus?: string[];
+  /** Warning when item was published but ML immediately closed/finalized it */
+  postPublishWarning?: string;
+  /** Resolved ML category ID (after enrichment) */
+  resolvedCategoryId?: string;
+  /** Human-readable category path, e.g. "Electrodomésticos > Cocción > Microondas" */
+  resolvedCategoryPath?: string;
+  /** True when the fallback hardcoded category was used instead of domain_discovery */
+  usedFallbackCategory?: boolean;
 }
 
 /** Structured ML API error — parsed from ML's error response body */

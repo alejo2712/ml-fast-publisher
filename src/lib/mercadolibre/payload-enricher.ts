@@ -11,7 +11,7 @@
  * This runs AFTER preflight so it only adds latency when we're about to publish.
  */
 
-import type { MLPayload } from '@/types';
+import type { MLPayload, ApplianceType } from '@/types';
 import { resolveCategory, validateCategoryId, type MLCategoryResolution } from './category-resolver';
 import { getCategoryAttributes, getAttributeIds, getMissingCriticalAttributes } from './category-attributes';
 import { buildDefaultAttribute } from './attribute-defaults';
@@ -31,6 +31,10 @@ export interface EnrichmentResult {
   missingRequired: MissingAttr[];
   /** True when there are still non-conditional required attrs missing (should block publish) */
   hasBlockingMissing: boolean;
+  /** True when domain_discovery was rejected and we fell back to a hardcoded category */
+  usedFallback: boolean;
+  /** Human-readable category path, e.g. "Electrodomésticos > Cocción > Microondas" */
+  categoryPath: string;
 }
 
 /**
@@ -40,12 +44,14 @@ export interface EnrichmentResult {
  * @param title               Product title — used for ML category prediction
  * @param officialCategoryId  User-provided override (skips prediction when present)
  * @param accessToken         Valid ML OAuth access token
+ * @param applianceType       Product type — used to validate resolved category path
  */
 export async function enrichPayload(
   payload: MLPayload,
   title: string,
   officialCategoryId: string | undefined,
-  accessToken: string
+  accessToken: string,
+  applianceType?: ApplianceType
 ): Promise<EnrichmentResult> {
   const warnings: string[] = [];
   let resolution: MLCategoryResolution | null = null;
@@ -67,19 +73,26 @@ export async function enrichPayload(
       );
     }
   } else {
-    resolution = await resolveCategory(title, accessToken);
+    // Pass applianceType so resolveCategory can validate the path and fall back if needed
+    resolution = await resolveCategory(title, accessToken, applianceType);
     if (!resolution) {
       warnings.push(
         `No se pudo predecir la categoría ML para "${title.slice(0, 40)}...". Se usará category_id del payload.`
       );
-    } else if (!resolution.isLeaf) {
-      warnings.push(
-        `Categoría predicha "${resolution.categoryName}" (${resolution.categoryId}) puede no ser hoja. Verificar.`
-      );
-    } else if (!resolution.supportsMarketplace) {
-      warnings.push(
-        `Categoría predicha "${resolution.categoryName}" solo acepta clasificados. Se intentará de todas formas.`
-      );
+    } else {
+      if (resolution.usedFallback && resolution.fallbackReason) {
+        warnings.push(`⚠️ Categoría de respaldo: ${resolution.fallbackReason}`);
+      }
+      if (!resolution.isLeaf) {
+        warnings.push(
+          `Categoría "${resolution.categoryName}" (${resolution.categoryId}) puede no ser hoja. Verificar.`
+        );
+      }
+      if (!resolution.supportsMarketplace) {
+        warnings.push(
+          `Categoría "${resolution.categoryName}" solo acepta clasificados. Se intentará de todas formas.`
+        );
+      }
     }
   }
 
@@ -102,7 +115,15 @@ export async function enrichPayload(
       `No se pudieron obtener los atributos de la categoría ${resolvedCategoryId}. Los atributos del payload no se filtrarán.`
     );
     logger.warn('publish', `Could not fetch category attributes`, { categoryId: resolvedCategoryId });
-    return { payload: enrichedPayload, resolution, warnings, missingRequired: [], hasBlockingMissing: false };
+    return {
+      payload: enrichedPayload,
+      resolution,
+      warnings,
+      missingRequired: [],
+      hasBlockingMissing: false,
+      usedFallback: resolution?.usedFallback ?? false,
+      categoryPath: resolution?.pathString ?? resolvedCategoryId,
+    };
   }
 
   const supportedIds = getAttributeIds(categoryAttrs);
@@ -187,5 +208,13 @@ export async function enrichPayload(
     hasBlockingMissing,
   });
 
-  return { payload: enrichedPayload, resolution, warnings, missingRequired: stillMissing, hasBlockingMissing };
+  return {
+    payload: enrichedPayload,
+    resolution,
+    warnings,
+    missingRequired: stillMissing,
+    hasBlockingMissing,
+    usedFallback: resolution?.usedFallback ?? false,
+    categoryPath: resolution?.pathString ?? resolvedCategoryId,
+  };
 }
