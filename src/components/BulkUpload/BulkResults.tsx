@@ -364,6 +364,23 @@ function RowDetail({ row, publishState }: RowDetailProps) {
           {row.draft.price && <span><span className="text-gray-400">Precio:</span> ${row.draft.price.toLocaleString('es-AR')}</span>}
           {row.draft.capacity && <span><span className="text-gray-400">Capacidad:</span> {row.draft.capacity}</span>}
           {row.draft.color && <span><span className="text-gray-400">Color:</span> {row.draft.color}</span>}
+          {/* ML-critical attributes — visible so you can verify the Excel was read correctly */}
+          <span className={row.draft.gtin ? 'text-gray-600' : 'text-amber-500'}>
+            <span className="text-gray-400">GTIN:</span>{' '}
+            {row.draft.gtin ?? <span className="italic">—</span>}
+          </span>
+          <span className={row.draft.height ? 'text-gray-600' : 'text-amber-500'}>
+            <span className="text-gray-400">Alto:</span>{' '}
+            {row.draft.height != null ? `${row.draft.height} cm` : <span className="italic">—</span>}
+          </span>
+          <span className={row.draft.width ? 'text-gray-600' : 'text-amber-500'}>
+            <span className="text-gray-400">Ancho:</span>{' '}
+            {row.draft.width != null ? `${row.draft.width} cm` : <span className="italic">—</span>}
+          </span>
+          <span className={row.draft.depth ? 'text-gray-600' : 'text-amber-500'}>
+            <span className="text-gray-400">Prof.:</span>{' '}
+            {row.draft.depth != null ? `${row.draft.depth} cm` : <span className="italic">—</span>}
+          </span>
         </div>
       )}
 
