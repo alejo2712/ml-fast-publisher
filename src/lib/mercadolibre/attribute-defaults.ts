@@ -44,9 +44,11 @@ const LIST_DEFAULTS: Record<string, string[]> = {
  * Maps target attribute ID → source attribute ID in the existing payload.
  */
 const NUMERIC_DERIVE_FROM: Record<string, string> = {
-  TOTAL_CAPACITY: 'CAPACITY',
+  // Map legacy CAPACITY id to the category-specific ids payload-builder now sends
+  TOTAL_CAPACITY: 'TOTAL_CAPACITY',
+  WASHING_MACHINE_CAPACITY: 'WASHING_MACHINE_CAPACITY',
+  VOLUME_CAPACITY: 'VOLUME_CAPACITY',
   POWER: 'POWER_CONSUMPTION',
-  // CAPACITY is the same id in both fridges and microwaves — no mapping needed
 };
 
 /**

@@ -4,7 +4,7 @@ export const APPLIANCE_CATEGORIES: CategoryConfig[] = [
   {
     id: 'refrigerator',
     name: 'Heladera / Refrigerador',
-    mlCategoryId: 'MLA1577',
+    mlCategoryId: 'MLA398582',
     applianceType: 'refrigerator',
     keywords: [
       'heladera', 'refrigerador', 'frigorífico', 'nevera', 'fridge', 'refrigerator',
@@ -13,10 +13,10 @@ export const APPLIANCE_CATEGORIES: CategoryConfig[] = [
     attributes: [
       { id: 'BRAND', label: 'Marca', required: true, type: 'select', options: ['Samsung', 'LG', 'Whirlpool', 'Electrolux', 'Drean', 'Philco', 'Gafa', 'Mabe', 'Candy', 'Bosch', 'Haier', 'TCL', 'Otra'] },
       { id: 'MODEL', label: 'Modelo', required: true, type: 'text', placeholder: 'Ej: RT32K5552S8' },
-      { id: 'CAPACITY', label: 'Capacidad (litros)', required: true, type: 'number', unit: 'L', placeholder: 'Ej: 320' },
+      { id: 'TOTAL_CAPACITY', label: 'Capacidad (litros)', required: true, type: 'number', unit: 'L', placeholder: 'Ej: 320' },
       { id: 'COLOR', label: 'Color', required: false, type: 'select', options: ['Blanco', 'Gris', 'Plateado', 'Negro', 'Inox', 'Otro'] },
       { id: 'VOLTAGE', label: 'Voltaje', required: false, type: 'select', options: ['220V', '110V', 'Bivolt'] },
-      { id: 'COOLING_TYPE', label: 'Tipo de enfriamiento', required: false, type: 'select', options: ['No Frost', 'Frost Free', 'Frío húmedo', 'Frío seco'] },
+      { id: 'DEFROST_SYSTEM', label: 'Sistema de descongelación', required: false, type: 'select', options: ['No Frost', 'Frost Free', 'Frío directo', 'Frío seco'] },
       { id: 'ENERGY_EFFICIENCY', label: 'Eficiencia energética', required: false, type: 'select', options: ['A+++', 'A++', 'A+', 'A', 'B', 'C', 'D'] },
       { id: 'HEIGHT', label: 'Alto (cm)', required: false, type: 'number', unit: 'cm' },
       { id: 'WIDTH', label: 'Ancho (cm)', required: false, type: 'number', unit: 'cm' },
@@ -26,7 +26,7 @@ export const APPLIANCE_CATEGORIES: CategoryConfig[] = [
   {
     id: 'washing_machine',
     name: 'Lavarropas',
-    mlCategoryId: 'MLA1574',
+    mlCategoryId: 'MLA431202',
     applianceType: 'washing_machine',
     keywords: [
       'lavarropas', 'lavadora', 'washing machine', 'lavasecadora', 'carga frontal', 'carga superior',
@@ -35,8 +35,8 @@ export const APPLIANCE_CATEGORIES: CategoryConfig[] = [
     attributes: [
       { id: 'BRAND', label: 'Marca', required: true, type: 'select', options: ['Samsung', 'LG', 'Whirlpool', 'Electrolux', 'Drean', 'Candy', 'Bosch', 'Haier', 'Otra'] },
       { id: 'MODEL', label: 'Modelo', required: true, type: 'text', placeholder: 'Ej: WW80T4040CE' },
-      { id: 'CAPACITY', label: 'Capacidad (kg)', required: true, type: 'number', unit: 'kg', placeholder: 'Ej: 8' },
-      { id: 'TYPE', label: 'Tipo de carga', required: true, type: 'select', options: ['Carga frontal', 'Carga superior'] },
+      { id: 'WASHING_MACHINE_CAPACITY', label: 'Capacidad (kg)', required: true, type: 'number', unit: 'kg', placeholder: 'Ej: 8' },
+      { id: 'LOAD_TYPE', label: 'Tipo de carga', required: true, type: 'select', options: ['Carga frontal', 'Carga superior'] },
       { id: 'COLOR', label: 'Color', required: false, type: 'select', options: ['Blanco', 'Gris', 'Plateado', 'Negro', 'Otro'] },
       { id: 'VOLTAGE', label: 'Voltaje', required: false, type: 'select', options: ['220V', '110V', 'Bivolt'] },
       { id: 'ENERGY_EFFICIENCY', label: 'Eficiencia energética', required: false, type: 'select', options: ['A+++', 'A++', 'A+', 'A', 'B', 'C', 'D'] },
@@ -45,13 +45,13 @@ export const APPLIANCE_CATEGORIES: CategoryConfig[] = [
   {
     id: 'dryer',
     name: 'Secadora',
-    mlCategoryId: 'MLA4745',
+    mlCategoryId: 'MLA10112',
     applianceType: 'dryer',
     keywords: ['secadora', 'secarropas', 'dryer', 'secado'],
     attributes: [
       { id: 'BRAND', label: 'Marca', required: true, type: 'select', options: ['Samsung', 'LG', 'Whirlpool', 'Electrolux', 'Drean', 'Otra'] },
       { id: 'MODEL', label: 'Modelo', required: true, type: 'text' },
-      { id: 'CAPACITY', label: 'Capacidad (kg)', required: true, type: 'number', unit: 'kg' },
+      { id: 'WASHING_MACHINE_CAPACITY', label: 'Capacidad (kg)', required: true, type: 'number', unit: 'kg' },
       { id: 'COLOR', label: 'Color', required: false, type: 'select', options: ['Blanco', 'Gris', 'Plateado', 'Otro'] },
       { id: 'VOLTAGE', label: 'Voltaje', required: false, type: 'select', options: ['220V', '110V', 'Bivolt'] },
     ],
@@ -59,7 +59,7 @@ export const APPLIANCE_CATEGORIES: CategoryConfig[] = [
   {
     id: 'dishwasher',
     name: 'Lavavajillas',
-    mlCategoryId: 'MLA4746',
+    mlCategoryId: 'MLA1579',
     applianceType: 'dishwasher',
     keywords: ['lavavajillas', 'lavacopas', 'dishwasher', 'lavaplatos'],
     attributes: [
@@ -73,7 +73,7 @@ export const APPLIANCE_CATEGORIES: CategoryConfig[] = [
   {
     id: 'oven',
     name: 'Horno',
-    mlCategoryId: 'MLA4750',
+    mlCategoryId: 'MLA10063',
     applianceType: 'oven',
     keywords: ['horno', 'oven', 'hornito', 'horno eléctrico', 'horno a gas', 'horno convector', 'horno conveccion'],
     attributes: [
@@ -88,7 +88,7 @@ export const APPLIANCE_CATEGORIES: CategoryConfig[] = [
   {
     id: 'stove',
     name: 'Cocina / Anafe',
-    mlCategoryId: 'MLA4752',
+    mlCategoryId: 'MLA4344',
     applianceType: 'stove',
     keywords: ['cocina', 'anafe', 'estufa', 'stove', 'cooktop', 'hornallas', 'vitrocerámica', 'inducción'],
     attributes: [
@@ -102,13 +102,13 @@ export const APPLIANCE_CATEGORIES: CategoryConfig[] = [
   {
     id: 'freezer',
     name: 'Freezer',
-    mlCategoryId: 'MLA4748',
+    mlCategoryId: 'MLA9458',
     applianceType: 'freezer',
     keywords: ['freezer', 'congelador', 'deep freeze', 'conservadora'],
     attributes: [
       { id: 'BRAND', label: 'Marca', required: true, type: 'select', options: ['Samsung', 'LG', 'Whirlpool', 'Electrolux', 'Gafa', 'Philco', 'Otra'] },
       { id: 'MODEL', label: 'Modelo', required: true, type: 'text' },
-      { id: 'CAPACITY', label: 'Capacidad (litros)', required: true, type: 'number', unit: 'L' },
+      { id: 'TOTAL_CAPACITY', label: 'Capacidad (litros)', required: true, type: 'number', unit: 'L' },
       { id: 'TYPE', label: 'Tipo', required: false, type: 'select', options: ['Vertical', 'Horizontal', 'Cajón'] },
       { id: 'COLOR', label: 'Color', required: false, type: 'select', options: ['Blanco', 'Gris', 'Otro'] },
       { id: 'VOLTAGE', label: 'Voltaje', required: false, type: 'select', options: ['220V', '110V', 'Bivolt'] },
@@ -117,13 +117,13 @@ export const APPLIANCE_CATEGORIES: CategoryConfig[] = [
   {
     id: 'microwave',
     name: 'Microondas',
-    mlCategoryId: 'MLA4749',
+    mlCategoryId: 'MLA1577',
     applianceType: 'microwave',
     keywords: ['microondas', 'microwave', 'horno microondas'],
     attributes: [
       { id: 'BRAND', label: 'Marca', required: true, type: 'select', options: ['Samsung', 'LG', 'Panasonic', 'Electrolux', 'Whirlpool', 'Sharp', 'Otra'] },
       { id: 'MODEL', label: 'Modelo', required: true, type: 'text' },
-      { id: 'CAPACITY', label: 'Capacidad (litros)', required: false, type: 'number', unit: 'L', placeholder: 'Ej: 28' },
+      { id: 'VOLUME_CAPACITY', label: 'Capacidad (litros)', required: false, type: 'number', unit: 'L', placeholder: 'Ej: 28' },
       { id: 'POWER_CONSUMPTION', label: 'Potencia (watts)', required: false, type: 'number', unit: 'W', placeholder: 'Ej: 1200' },
       { id: 'COLOR', label: 'Color', required: false, type: 'select', options: ['Blanco', 'Negro', 'Inox', 'Otro'] },
       { id: 'VOLTAGE', label: 'Voltaje', required: false, type: 'select', options: ['220V', '110V', 'Bivolt'] },
@@ -132,13 +132,13 @@ export const APPLIANCE_CATEGORIES: CategoryConfig[] = [
   {
     id: 'air_fryer',
     name: 'Freidora de Aire',
-    mlCategoryId: 'MLA438470',
+    mlCategoryId: 'MLA456045',
     applianceType: 'air_fryer',
     keywords: ['freidora de aire', 'air fryer', 'airfryer', 'freidora sin aceite', 'friteuse'],
     attributes: [
       { id: 'BRAND', label: 'Marca', required: true, type: 'select', options: ['Philips', 'Tefal', 'Ninja', 'Black+Decker', 'Cosori', 'Midea', 'Otra'] },
       { id: 'MODEL', label: 'Modelo', required: true, type: 'text' },
-      { id: 'CAPACITY', label: 'Capacidad (litros)', required: false, type: 'number', unit: 'L', placeholder: 'Ej: 4' },
+      { id: 'VOLUME_CAPACITY', label: 'Capacidad (litros)', required: false, type: 'number', unit: 'L', placeholder: 'Ej: 4' },
       { id: 'POWER_CONSUMPTION', label: 'Potencia (watts)', required: false, type: 'number', unit: 'W' },
       { id: 'COLOR', label: 'Color', required: false, type: 'select', options: ['Negro', 'Blanco', 'Gris', 'Rojo', 'Otro'] },
       { id: 'VOLTAGE', label: 'Voltaje', required: false, type: 'select', options: ['220V', '110V', 'Bivolt'] },
@@ -147,13 +147,13 @@ export const APPLIANCE_CATEGORIES: CategoryConfig[] = [
   {
     id: 'blender',
     name: 'Licuadora',
-    mlCategoryId: 'MLA439005',
+    mlCategoryId: 'MLA104680',
     applianceType: 'blender',
     keywords: ['licuadora', 'blender', 'batidora de vaso', 'procesadora', 'smoothie'],
     attributes: [
       { id: 'BRAND', label: 'Marca', required: true, type: 'select', options: ['Oster', 'Philips', 'Black+Decker', 'Hamilton Beach', 'Ninja', 'Otra'] },
       { id: 'MODEL', label: 'Modelo', required: true, type: 'text' },
-      { id: 'CAPACITY', label: 'Capacidad (litros)', required: false, type: 'number', unit: 'L' },
+      { id: 'VOLUME_CAPACITY', label: 'Capacidad (litros)', required: false, type: 'number', unit: 'L' },
       { id: 'POWER_CONSUMPTION', label: 'Potencia (watts)', required: false, type: 'number', unit: 'W' },
       { id: 'COLOR', label: 'Color', required: false, type: 'select', options: ['Negro', 'Blanco', 'Gris', 'Rojo', 'Otro'] },
       { id: 'VOLTAGE', label: 'Voltaje', required: false, type: 'select', options: ['220V', '110V', 'Bivolt'] },
@@ -162,14 +162,14 @@ export const APPLIANCE_CATEGORIES: CategoryConfig[] = [
   {
     id: 'coffee_maker',
     name: 'Cafetera',
-    mlCategoryId: 'MLA4753',
+    mlCategoryId: 'MLA4340',
     applianceType: 'coffee_maker',
     keywords: ['cafetera', 'coffee maker', 'espresso', 'capsulas', 'nespresso', 'dolce gusto', 'percoladora', 'french press', 'prensa francesa'],
     attributes: [
       { id: 'BRAND', label: 'Marca', required: true, type: 'select', options: ['Nespresso', 'Dolce Gusto', 'Philips', 'Oster', 'Black+Decker', 'De Longhi', 'Otra'] },
       { id: 'MODEL', label: 'Modelo', required: true, type: 'text' },
       { id: 'TYPE', label: 'Tipo', required: false, type: 'select', options: ['Cápsulas', 'Espresso', 'Goteo', 'Prensa francesa', 'Percoladora', 'Automática'] },
-      { id: 'CAPACITY', label: 'Capacidad (tazas)', required: false, type: 'number', placeholder: 'Ej: 12' },
+      { id: 'VOLUME_CAPACITY', label: 'Capacidad (litros)', required: false, type: 'number', unit: 'L', placeholder: 'Ej: 1.5' },
       { id: 'POWER_CONSUMPTION', label: 'Potencia (watts)', required: false, type: 'number', unit: 'W' },
       { id: 'COLOR', label: 'Color', required: false, type: 'select', options: ['Negro', 'Blanco', 'Rojo', 'Plateado', 'Otro'] },
     ],
@@ -177,13 +177,13 @@ export const APPLIANCE_CATEGORIES: CategoryConfig[] = [
   {
     id: 'electric_kettle',
     name: 'Pava Eléctrica',
-    mlCategoryId: 'MLA5554',
+    mlCategoryId: 'MLA10064',
     applianceType: 'electric_kettle',
     keywords: ['pava eléctrica', 'hervidor', 'kettle', 'tetera eléctrica', 'calentador de agua'],
     attributes: [
       { id: 'BRAND', label: 'Marca', required: true, type: 'select', options: ['Philips', 'Tefal', 'Black+Decker', 'Oster', 'Otra'] },
       { id: 'MODEL', label: 'Modelo', required: true, type: 'text' },
-      { id: 'CAPACITY', label: 'Capacidad (litros)', required: false, type: 'number', unit: 'L', placeholder: 'Ej: 1.7' },
+      { id: 'VOLUME_CAPACITY', label: 'Capacidad (litros)', required: false, type: 'number', unit: 'L', placeholder: 'Ej: 1.7' },
       { id: 'POWER_CONSUMPTION', label: 'Potencia (watts)', required: false, type: 'number', unit: 'W' },
       { id: 'COLOR', label: 'Color', required: false, type: 'select', options: ['Negro', 'Blanco', 'Plateado', 'Otro'] },
     ],
@@ -191,7 +191,7 @@ export const APPLIANCE_CATEGORIES: CategoryConfig[] = [
   {
     id: 'vacuum_cleaner',
     name: 'Aspiradora',
-    mlCategoryId: 'MLA1763',
+    mlCategoryId: 'MLA4337',
     applianceType: 'vacuum_cleaner',
     keywords: ['aspiradora', 'vacuum', 'aspirador', 'robot aspiradora', 'escoba eléctrica', 'sin bolsa', 'ciclónica'],
     attributes: [
@@ -206,7 +206,7 @@ export const APPLIANCE_CATEGORIES: CategoryConfig[] = [
   {
     id: 'iron',
     name: 'Plancha',
-    mlCategoryId: 'MLA4755',
+    mlCategoryId: 'MLA10115',
     applianceType: 'iron',
     keywords: ['plancha', 'iron', 'vaporizador', 'plancha a vapor', 'centro de planchado'],
     attributes: [
@@ -221,7 +221,7 @@ export const APPLIANCE_CATEGORIES: CategoryConfig[] = [
   {
     id: 'toaster',
     name: 'Tostadora',
-    mlCategoryId: 'MLA4756',
+    mlCategoryId: 'MLA10068',
     applianceType: 'toaster',
     keywords: ['tostadora', 'toaster', 'tostador', 'sandwichera', 'waflera'],
     attributes: [

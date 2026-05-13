@@ -51,6 +51,24 @@ export function buildProductDraft(
   };
 }
 
+function getCapacityAttr(applianceType: string): { id: string; unit: string } {
+  switch (applianceType) {
+    case 'refrigerator':
+    case 'freezer':
+      return { id: 'TOTAL_CAPACITY', unit: 'L' };
+    case 'washing_machine':
+    case 'dryer':
+      return { id: 'WASHING_MACHINE_CAPACITY', unit: 'kg' };
+    case 'microwave':
+    case 'air_fryer':
+    case 'blender':
+    case 'coffee_maker':
+    case 'electric_kettle':
+    default:
+      return { id: 'VOLUME_CAPACITY', unit: 'L' };
+  }
+}
+
 function buildAttributes(draft: ProductDraft): MLAttribute[] {
   const attrs: MLAttribute[] = [];
 
@@ -61,11 +79,11 @@ function buildAttributes(draft: ProductDraft): MLAttribute[] {
 
   if (draft.capacity) {
     const capNum = parseFloat(draft.capacity);
-    const unit = draft.applianceType === 'washing_machine' || draft.applianceType === 'dryer' ? 'kg' : 'L';
+    const { id: capId, unit: capUnit } = getCapacityAttr(draft.applianceType);
     attrs.push({
-      id: 'CAPACITY',
-      value_name: `${draft.capacity} ${unit}`,
-      value_struct: { number: capNum, unit },
+      id: capId,
+      value_name: `${draft.capacity} ${capUnit}`,
+      value_struct: { number: capNum, unit: capUnit },
     });
   }
 
@@ -77,7 +95,13 @@ function buildAttributes(draft: ProductDraft): MLAttribute[] {
     });
   }
 
-  if (draft.technology) attrs.push({ id: 'COOLING_TYPE', value_name: draft.technology });
+  if (draft.technology) {
+    // DEFROST_SYSTEM for fridges/freezers; COOLING_TYPE for everything else (enricher strips unknowns)
+    const techId = (draft.applianceType === 'refrigerator' || draft.applianceType === 'freezer')
+      ? 'DEFROST_SYSTEM'
+      : 'COOLING_TYPE';
+    attrs.push({ id: techId, value_name: draft.technology });
+  }
   if (draft.height) attrs.push({ id: 'HEIGHT', value_name: `${draft.height} cm`, value_struct: { number: draft.height, unit: 'cm' } });
   if (draft.width) attrs.push({ id: 'WIDTH', value_name: `${draft.width} cm`, value_struct: { number: draft.width, unit: 'cm' } });
   if (draft.depth) attrs.push({ id: 'DEPTH', value_name: `${draft.depth} cm`, value_struct: { number: draft.depth, unit: 'cm' } });

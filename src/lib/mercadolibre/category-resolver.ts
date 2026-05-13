@@ -93,20 +93,21 @@ const APPLIANCE_PATH_KEYWORDS: Partial<Record<ApplianceType, string[]>> = {
  * Sellers should set `categoria_ml` explicitly when publishing to ensure the correct leaf.
  */
 export const APPLIANCE_FALLBACK_CATEGORIES: Partial<Record<ApplianceType, string>> = {
-  refrigerator:    'MLA1577',
-  freezer:         'MLA4748',
-  washing_machine: 'MLA1574',
-  dryer:           'MLA4745',
-  dishwasher:      'MLA4746',
-  oven:            'MLA4750',
-  stove:           'MLA4752',
-  microwave:       'MLA4749',
-  air_fryer:       'MLA438470',
-  blender:         'MLA439005',
-  coffee_maker:    'MLA4753',
-  electric_kettle: 'MLA5554',
-  vacuum_cleaner:  'MLA1763',
-  iron:            'MLA4755',
+  refrigerator:    'MLA398582',
+  freezer:         'MLA9458',
+  washing_machine: 'MLA431202',
+  dryer:           'MLA10112',
+  dishwasher:      'MLA1579',
+  oven:            'MLA10063',
+  stove:           'MLA4344',
+  microwave:       'MLA1577',
+  air_fryer:       'MLA456045',
+  blender:         'MLA104680',
+  coffee_maker:    'MLA4340',
+  electric_kettle: 'MLA10064',
+  vacuum_cleaner:  'MLA4337',
+  iron:            'MLA10115',
+  toaster:         'MLA10068',
 };
 
 /**
