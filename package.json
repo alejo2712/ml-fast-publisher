@@ -8,6 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test:bulk": "npx tsx scripts/test-bulk-parser.ts",
+    "test:real-fixture": "npx tsx scripts/test-real-fixture.ts",
+    "gen:fixture": "npx tsx scripts/generate-real-publish-test.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

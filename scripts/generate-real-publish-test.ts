@@ -14,6 +14,8 @@ import { parseCsvText, parseXlsxBuffer } from '../src/lib/csv/parser';
 
 // ── Column headers (must exactly match CSV_COLUMNS in src/lib/csv/template.ts) ─
 
+// IMPORTANT: This array must match CSV_COLUMNS[].header in src/lib/csv/template.ts exactly.
+// If a column is added to template.ts, add it here too.
 const HEADERS = [
   'titulo',
   'descripcion_corta',
@@ -41,6 +43,9 @@ const HEADERS = [
   'tipo_alimentacion',
   'requiere_armado',
   'incluye_manual_armado',
+  'alto_cm',
+  'ancho_cm',
+  'profundidad_cm',
   'categoria_ml',
 ];
 
@@ -152,11 +157,16 @@ function buildFridge(img1: string, img2: string): Row {
       'Iluminacion LED interior. Estantes de vidrio templado.',
       'Incluye garantia oficial Samsung de 12 meses.',
     ].join(' '),
-    codigo_gtin:           '',
+    // EAN-13 for Samsung RT29FARADWW — valid checksum (7+7+0+9+5+4+5+0+1+8+8+3 → check=1)
+    codigo_gtin:           '7709545018831',
     fabricante:            'Samsung Electronics Argentina S.A.',
     tipo_alimentacion:     '220V',
     requiere_armado:       'no',
     incluye_manual_armado: 'no',
+    // Physical dimensions in cm (Samsung RT29FARADWW spec sheet)
+    alto_cm:               '172',
+    ancho_cm:              '60',
+    profundidad_cm:        '65',
     categoria_ml:          '',
   };
 }
@@ -196,6 +206,10 @@ function buildMicrowave(img1: string, img2: string): Row {
     tipo_alimentacion:     '220V',
     requiere_armado:       'no',
     incluye_manual_armado: 'no',
+    // Physical dimensions in cm (Samsung MS23K3513AW spec sheet)
+    alto_cm:               '27',
+    ancho_cm:              '52',
+    profundidad_cm:        '40',
     categoria_ml:          '',
   };
 }
@@ -280,9 +294,13 @@ async function main() {
     ['Recordar: ML requiere categoria HOJA (sin hijos).'],
     [''],
     ['ATRIBUTOS INCLUIDOS'],
+    ['codigo_gtin',       '7709545018831 (heladera) → GTIN en ML (requerido por algunas categorias)'],
     ['fabricante',        'Samsung Electronics Argentina S.A. → MANUFACTURER en ML'],
     ['tipo_alimentacion', '220V → POWER_SUPPLY_TYPE en ML'],
     ['requiere_armado',   'no → REQUIRES_ASSEMBLY en ML'],
+    ['alto_cm',           '172 (heladera) / 27 (microondas) → HEIGHT en ML'],
+    ['ancho_cm',          '60 (heladera) / 52 (microondas) → WIDTH en ML'],
+    ['profundidad_cm',    '65 (heladera) / 40 (microondas) → DEPTH en ML'],
     [''],
     ['QUE HACER SI FALLA'],
     ['1. Revisar mlResponse en PublishHistory (panel Historial).'],
@@ -311,7 +329,7 @@ async function main() {
 
   const outDir = path.resolve(__dirname, '../tests/fixtures');
   fs.mkdirSync(outDir, { recursive: true });
-  const outPath = path.join(outDir, 'ml-real-publish-test.xlsx');
+  const outPath = path.join(outDir, 'ml-real-publish-final.xlsx');
   XLSX.writeFile(wb, outPath);
 
   console.log(`\n✅ Generated: ${outPath}`);
@@ -343,6 +361,11 @@ async function main() {
       console.log(`  condition          : ${row.draft.condition}`);
       console.log(`  images             : ${row.draft.images.length} url(s)`);
       console.log(`  shipping.mode      : ${row.draft.shipping.mode}`);
+      // These are the attributes that were historically missing — verify they flow through
+      console.log(`  gtin               : ${row.draft.gtin ?? '(MISSING — WILL FAIL FOR REFRIGERATORS)'}`);
+      console.log(`  height             : ${row.draft.height != null ? row.draft.height + ' cm' : '(MISSING — WILL FAIL)'}`);
+      console.log(`  width              : ${row.draft.width != null ? row.draft.width + ' cm' : '(MISSING — WILL FAIL)'}`);
+      console.log(`  depth              : ${row.draft.depth != null ? row.draft.depth + ' cm' : '(MISSING — WILL FAIL)'}`);
       if (row.draft.manufacturer)
         console.log(`  manufacturer       : ${row.draft.manufacturer}`);
       if (row.draft.powerSupplyType)
@@ -395,7 +418,7 @@ async function main() {
 
   console.log('\n── Next steps ───────────────────────────────────────────────────');
   console.log(`  1. MERCADOLIBRE_DRY_RUN must be "false" in Vercel env for real publish`);
-  console.log(`  2. Upload ${path.basename(outPath)} in FastPublisher bulk mode`);
+  console.log(`  2. Upload ml-real-publish-final.xlsx in FastPublisher bulk mode`);
   console.log(`  3. Click "Publicar en Mercado Libre" — confirm the modal`);
   console.log(`  4. Check PublishHistory for ML response per item`);
   console.log(`  5. If category fails: add exact ML ID in "categoria_ml" column\n`);

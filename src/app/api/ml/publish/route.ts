@@ -106,6 +106,24 @@ export async function POST(request: NextRequest) {
     const { rowIndex, draftId } = item;
     let preflightResult: PreflightResult | null = null;
 
+    // Safe per-row debug log — no tokens, no secrets
+    const incomingAttrs = item.payload?.attributes ?? [];
+    logger.info('publish', `[row ${rowIndex ?? '?'}] Incoming row`, {
+      title:          item.payload?.title?.slice(0, 60),
+      applianceType:  item.applianceType ?? '(not sent)',
+      category_id:    item.payload?.category_id,
+      price:          item.payload?.price,
+      condition:      item.payload?.condition,
+      imageCount:     (item.payload?.pictures ?? []).length,
+      images:         (item.payload?.pictures ?? []).map((p) => p.source),
+      attrIds:        incomingAttrs.map((a) => a.id).join(', ') || '(none)',
+      gtin:           incomingAttrs.find((a) => a.id === 'GTIN')?.value_name ?? '(missing)',
+      height:         incomingAttrs.find((a) => a.id === 'HEIGHT')?.value_name ?? '(missing)',
+      width:          incomingAttrs.find((a) => a.id === 'WIDTH')?.value_name ?? '(missing)',
+      depth:          incomingAttrs.find((a) => a.id === 'DEPTH')?.value_name ?? '(missing)',
+      officialCategoryId: item.officialCategoryId ?? '(none)',
+    });
+
     // 1. Payload validation
     const payloadErrors: string[] = [];
     if (!item.payload?.title || item.payload.title.trim().length < 10)
