@@ -20,7 +20,8 @@ import type { MLAttribute } from '@/types';
 const LIST_DEFAULTS: Record<string, string[]> = {
   // ── Refrigerators / freezers ─────────────────────────────────────────────
   ENERGY_EFFICIENCY_CLASS: ['A', 'A+', 'A++', 'B', 'C'],
-  DEFROST_SYSTEM: ['No Frost', 'Frost Free', 'Frío directo', 'Frío seco', 'Estático'],
+  // DEFROST_TYPE is the real ML attribute ID (not DEFROST_SYSTEM)
+  DEFROST_TYPE: ['No frost', 'Descongelamiento cíclico', 'Semiautomático', 'Manual', 'Frío directo'],
   REFRIGERATOR_TYPE: ['Combinada', 'Simple', 'Americana'],
 
   // ── Microwaves ────────────────────────────────────────────────────────────

@@ -96,11 +96,34 @@ function buildAttributes(draft: ProductDraft): MLAttribute[] {
   }
 
   if (draft.technology) {
-    // DEFROST_SYSTEM for fridges/freezers; COOLING_TYPE for everything else (enricher strips unknowns)
+    // DEFROST_TYPE for fridges/freezers (verified ML attr ID); COOLING_TYPE for others (enricher strips unknowns)
     const techId = (draft.applianceType === 'refrigerator' || draft.applianceType === 'freezer')
-      ? 'DEFROST_SYSTEM'
+      ? 'DEFROST_TYPE'
       : 'COOLING_TYPE';
     attrs.push({ id: techId, value_name: draft.technology });
+  }
+
+  // Refrigerator-specific required attrs (WITH_FREEZER, IS_MINIBAR)
+  // Default: has freezer=Sí, minibar=No — covers the vast majority of consumer heladeras
+  if (draft.applianceType === 'refrigerator') {
+    attrs.push({ id: 'WITH_FREEZER', value_name: 'Sí', value_id: '242085' });
+    attrs.push({ id: 'IS_MINIBAR', value_name: 'No', value_id: '242084' });
+  }
+
+  // POWER_SUPPLY_TYPE: required by microwave (MLA1577) and useful for other appliances
+  // Map voltage to ML's controlled vocab: 220V → Corriente doméstica (id=49713698)
+  if (draft.voltage || draft.applianceType === 'microwave') {
+    const supplyType =
+      draft.voltage === '110V'
+        ? 'Corriente doméstica'
+        : draft.voltage === 'Bivolt'
+        ? 'Corriente doméstica/Energía industrial'
+        : 'Corriente doméstica'; // default 220V
+    const supplyId =
+      supplyType === 'Corriente doméstica/Energía industrial' ? '54973110'
+      : supplyType === 'Energía industrial' ? '54769666'
+      : '49713698';
+    attrs.push({ id: 'POWER_SUPPLY_TYPE', value_name: supplyType, value_id: supplyId });
   }
   if (draft.height) attrs.push({ id: 'HEIGHT', value_name: `${draft.height} cm`, value_struct: { number: draft.height, unit: 'cm' } });
   if (draft.width) attrs.push({ id: 'WIDTH', value_name: `${draft.width} cm`, value_struct: { number: draft.width, unit: 'cm' } });

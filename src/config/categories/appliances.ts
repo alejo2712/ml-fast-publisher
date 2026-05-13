@@ -16,7 +16,7 @@ export const APPLIANCE_CATEGORIES: CategoryConfig[] = [
       { id: 'TOTAL_CAPACITY', label: 'Capacidad (litros)', required: true, type: 'number', unit: 'L', placeholder: 'Ej: 320' },
       { id: 'COLOR', label: 'Color', required: false, type: 'select', options: ['Blanco', 'Gris', 'Plateado', 'Negro', 'Inox', 'Otro'] },
       { id: 'VOLTAGE', label: 'Voltaje', required: false, type: 'select', options: ['220V', '110V', 'Bivolt'] },
-      { id: 'DEFROST_SYSTEM', label: 'Sistema de descongelación', required: false, type: 'select', options: ['No Frost', 'Frost Free', 'Frío directo', 'Frío seco'] },
+      { id: 'DEFROST_TYPE', label: 'Tipo de deshielo', required: false, type: 'select', options: ['No frost', 'Descongelamiento cíclico', 'Semiautomático', 'Manual', 'Frío directo'] },
       { id: 'ENERGY_EFFICIENCY', label: 'Eficiencia energética', required: false, type: 'select', options: ['A+++', 'A++', 'A+', 'A', 'B', 'C', 'D'] },
       { id: 'HEIGHT', label: 'Alto (cm)', required: false, type: 'number', unit: 'cm' },
       { id: 'WIDTH', label: 'Ancho (cm)', required: false, type: 'number', unit: 'cm' },
