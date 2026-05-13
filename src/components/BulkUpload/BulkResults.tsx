@@ -342,9 +342,11 @@ function MLCauseList({ mlResponse }: { mlResponse: unknown }) {
 interface RowDetailProps {
   row: CsvRowResult;
   publishState?: RowPublishState;
+  mlImageUrls?: Map<string, string>;
+  imageUploadErrors?: Map<string, string>;
 }
 
-function RowDetail({ row, publishState }: RowDetailProps) {
+function RowDetail({ row, publishState, mlImageUrls, imageUploadErrors }: RowDetailProps) {
   const [showPayload, setShowPayload] = useState(false);
   const [showRawResponse, setShowRawResponse] = useState(false);
 
@@ -384,10 +386,113 @@ function RowDetail({ row, publishState }: RowDetailProps) {
         </div>
       )}
 
+      {/* Local image status — shown when row references local image filenames */}
+      {row.localImageRefs.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Imágenes locales</p>
+          {row.localImageRefs.map((ref) => {
+            const mlUrl = mlImageUrls?.get(ref.toLowerCase());
+            const uploadError = imageUploadErrors?.get(ref);
+            return (
+              <div key={ref} className={cn(
+                'flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs',
+                mlUrl ? 'bg-emerald-50 border border-emerald-200 text-emerald-800' :
+                uploadError ? 'bg-red-50 border border-red-200 text-red-700' :
+                'bg-gray-50 border border-gray-200 text-gray-600'
+              )}>
+                <span className="font-mono flex-1 truncate">{ref}</span>
+                {mlUrl ? (
+                  <a href={mlUrl} target="_blank" rel="noreferrer" className="text-emerald-600 font-medium shrink-0 underline flex items-center gap-1">
+                    <ExternalLink size={10} />ML CDN
+                  </a>
+                ) : uploadError ? (
+                  <span className="text-red-600 font-medium shrink-0">{uploadError}</span>
+                ) : (
+                  <span className="text-gray-400 shrink-0 italic">Pendiente de subir</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Pre-publish info panel: category, GTIN, required attrs (shown before and after publish) */}
+      {row.draft && !publishState?.resolvedCategoryPath && (
+        <div className="space-y-1 rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
+          <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Antes de publicar</p>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs">
+            <span className={row.draft.gtin ? 'text-gray-700' : 'text-amber-600'}>
+              <span className="text-gray-400">GTIN:</span>{' '}
+              {row.draft.gtin ?? <span className="italic">— faltante</span>}
+            </span>
+            <span className={row.draft.officialCategoryId ? 'text-gray-700' : 'text-amber-600'}>
+              <span className="text-gray-400">categoria_ml:</span>{' '}
+              {row.draft.officialCategoryId ?? <span className="italic">— auto-resolución</span>}
+            </span>
+            <span className={row.draft.height ? 'text-gray-700' : 'text-gray-400'}>
+              <span className="text-gray-400">Alto:</span>{' '}
+              {row.draft.height != null ? `${row.draft.height} cm` : <span className="italic">—</span>}
+            </span>
+            <span className={row.draft.width ? 'text-gray-700' : 'text-gray-400'}>
+              <span className="text-gray-400">Ancho:</span>{' '}
+              {row.draft.width != null ? `${row.draft.width} cm` : <span className="italic">—</span>}
+            </span>
+            <span className={row.draft.depth ? 'text-gray-700' : 'text-gray-400'}>
+              <span className="text-gray-400">Prof.:</span>{' '}
+              {row.draft.depth != null ? `${row.draft.depth} cm` : <span className="italic">—</span>}
+            </span>
+            <span className="text-gray-600">
+              <span className="text-gray-400">Imágenes:</span>{' '}
+              {(row.draft.images ?? []).length > 0 ? (
+                `${(row.draft.images ?? []).length} imagen${(row.draft.images ?? []).length !== 1 ? 'es' : ''}`
+              ) : <span className="text-red-500 italic">— sin imágenes</span>}
+              {row.localImageRefs.length > 0 && (
+                <span className="ml-1 text-indigo-600">({row.localImageRefs.length} local{row.localImageRefs.length !== 1 ? 'es' : ''})</span>
+              )}
+            </span>
+          </div>
+          {!row.draft.officialCategoryId && (
+            <p className="text-[11px] text-amber-600 mt-1">
+              Sin categoria_ml: el sistema predecirá la categoría automáticamente. Para mayor precisión, especificala.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Resolved category — shown after publish (or when preflight_failed due to category) */}
+      {publishState?.resolvedCategoryPath && (
+        <div className={cn(
+          'text-xs rounded-lg px-3 py-2 space-y-0.5',
+          publishState.usedFallbackCategory ? 'bg-amber-50 border border-amber-200 text-amber-800' : 'bg-blue-50 border border-blue-100 text-blue-800'
+        )}>
+          <p className="font-semibold text-[11px] uppercase tracking-wide opacity-60">Categoría ML resuelta</p>
+          <p className="font-mono text-[11px]">{publishState.resolvedCategoryId}</p>
+          <p>{publishState.resolvedCategoryPath}</p>
+          {publishState.usedFallbackCategory && (
+            <p className="text-amber-700 text-[11px] italic">Categoría de respaldo — especificá categoria_ml para mayor precisión.</p>
+          )}
+        </div>
+      )}
+
+      {/* Post-publish warning — item was accepted but ML closed it immediately */}
+      {publishState?.postPublishWarning && (
+        <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-800">
+          <AlertTriangle size={13} className="shrink-0 mt-0.5 text-red-500" />
+          <div>
+            <p className="font-semibold">Publicado, pero Mercado Libre lo finalizó</p>
+            <p className="mt-0.5 leading-relaxed">{publishState.postPublishWarning}</p>
+            {publishState.mlItemSubStatus && publishState.mlItemSubStatus.length > 0 && (
+              <p className="mt-1 font-mono text-[11px] text-red-600">sub_status: {publishState.mlItemSubStatus.join(', ')}</p>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Publish status badge */}
       {publishState && publishState.status !== 'idle' && (
         <div className={cn(
           'text-xs rounded-lg px-3 py-2 space-y-1',
+          publishState.postPublishWarning ? 'bg-red-50 text-red-700' :
           publishState.status === 'published' ? 'bg-emerald-50 text-emerald-700' :
           publishState.status === 'dry_run' ? 'bg-amber-50 text-amber-700' :
           publishState.status === 'preflight_failed' ? 'bg-orange-50 text-orange-700' :
@@ -397,7 +502,8 @@ function RowDetail({ row, publishState }: RowDetailProps) {
         )}>
           <div className="flex items-center gap-2">
             {publishState.status === 'publishing' && <Loader2 size={12} className="animate-spin" />}
-            {publishState.status === 'published' && <CheckCircle2 size={12} />}
+            {publishState.status === 'published' && !publishState.postPublishWarning && <CheckCircle2 size={12} />}
+            {publishState.status === 'published' && publishState.postPublishWarning && <AlertTriangle size={12} />}
             {publishState.status === 'dry_run' && <FlaskConical size={12} />}
             {publishState.status === 'failed' && <XCircle size={12} />}
             {publishState.status === 'preflight_failed' && <ShieldOff size={12} />}
@@ -510,6 +616,8 @@ interface BulkResultsProps {
   totalErrors: number;
   onReset: () => void;
   onRowEdit: (rowIndex: number, changes: RowChanges) => void;
+  /** Local image files uploaded by the user alongside the Excel — keyed by filename (lowercase) */
+  imageFiles?: Map<string, File>;
 }
 
 interface BulkPublishSummary {
@@ -521,7 +629,7 @@ interface BulkPublishSummary {
   preflightFailed: number;
 }
 
-export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset, onRowEdit }: BulkResultsProps) {
+export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset, onRowEdit, imageFiles }: BulkResultsProps) {
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
   const [editingRows, setEditingRows] = useState<Set<number>>(new Set());
   const [publishStates, setPublishStates] = useState<Map<number, RowPublishState>>(new Map());
@@ -531,6 +639,9 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
   const [showBulkConfirm, setShowBulkConfirm] = useState(false);
   const [realConfirmed, setRealConfirmed] = useState(false);
   const [publishSummary, setPublishSummary] = useState<BulkPublishSummary | null>(null);
+  // ML CDN URLs resolved during pre-publish image upload — keyed by original filename (lowercase)
+  const [mlImageUrls, setMlImageUrls] = useState<Map<string, string>>(new Map());
+  const [imageUploadErrors, setImageUploadErrors] = useState<Map<string, string>>(new Map());
 
   useEffect(() => {
     fetch('/api/ml/status')
@@ -567,8 +678,72 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
     setRealConfirmed(false);
     setIsBulkPublishing(true);
     setPublishSummary(null);
+    setImageUploadErrors(new Map());
 
-    // Mark all publishable rows as "publishing"
+    // ── Step 1: Upload local image files to ML CDN (if any) ───────────────────
+    // Collect all unique local filenames across publishable rows
+    const localFilesToUpload = new Set<string>();
+    publishableRows.forEach((r) => {
+      r.localImageRefs.forEach((ref) => localFilesToUpload.add(ref));
+    });
+
+    const currentMlImageUrls = new Map(mlImageUrls);
+    const currentImageErrors = new Map<string, string>();
+
+    if (localFilesToUpload.size > 0 && imageFiles && imageFiles.size > 0 && !mlDryRun) {
+      setPublishStates((prev) => {
+        const next = new Map(prev);
+        publishableRows.forEach((r) => next.set(r.rowIndex, { status: 'publishing', message: 'Subiendo imágenes a Mercado Libre...' }));
+        return next;
+      });
+
+      // Build FormData with all local files that need uploading (skip already uploaded)
+      const formData = new FormData();
+      let hasFiles = false;
+      for (const filename of localFilesToUpload) {
+        if (currentMlImageUrls.has(filename.toLowerCase())) continue; // already uploaded
+        const file = imageFiles.get(filename.toLowerCase());
+        if (file) {
+          formData.append('files', file, file.name);
+          hasFiles = true;
+        } else {
+          currentImageErrors.set(filename, `Imagen no encontrada: ${filename}`);
+        }
+      }
+
+      if (hasFiles) {
+        try {
+          const uploadRes = await fetch('/api/ml/upload-pictures', { method: 'POST', body: formData });
+          const uploadData = await uploadRes.json() as {
+            uploads: Array<{ filename: string; secureUrl: string }>;
+            errors: Array<{ filename: string; error: string }>;
+          };
+          uploadData.uploads.forEach(({ filename, secureUrl }) => {
+            currentMlImageUrls.set(filename.toLowerCase(), secureUrl);
+          });
+          uploadData.errors.forEach(({ filename, error }) => {
+            currentImageErrors.set(filename, error);
+          });
+          setMlImageUrls(new Map(currentMlImageUrls));
+        } catch (err) {
+          // Network error uploading images — mark all local-image rows as failed
+          const msg = `Error subiendo imágenes: ${err instanceof Error ? err.message : 'Error de red'}`;
+          setPublishStates((prev) => {
+            const next = new Map(prev);
+            publishableRows.filter((r) => r.localImageRefs.length > 0).forEach((r) =>
+              next.set(r.rowIndex, { status: 'failed', message: msg })
+            );
+            return next;
+          });
+          setImageUploadErrors(currentImageErrors);
+          setIsBulkPublishing(false);
+          return;
+        }
+      }
+      setImageUploadErrors(currentImageErrors);
+    }
+
+    // Mark remaining publishable rows as "publishing"
     setPublishStates((prev) => {
       const next = new Map(prev);
       publishableRows.forEach((r) => next.set(r.rowIndex, { status: 'publishing', message: 'Publicando...' }));
@@ -576,12 +751,31 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
     });
 
     try {
-      const items = publishableRows.map((r) => ({
-        payload: r.payload!,
-        rowIndex: r.rowIndex,
-        officialCategoryId: r.draft?.officialCategoryId,
-        applianceType: r.draft?.applianceType,
-      }));
+      // Build items — replace local image filenames with ML CDN URLs in payload
+      const items = publishableRows.map((r) => {
+        let payload = r.payload!;
+
+        // Substitute local image filenames with ML CDN URLs
+        if (r.localImageRefs.length > 0 && payload.pictures) {
+          const updatedPictures = payload.pictures.map((pic) => {
+            const key = pic.source.toLowerCase();
+            const isLocal = !pic.source.startsWith('http');
+            if (isLocal) {
+              const mlUrl = currentMlImageUrls.get(key);
+              return mlUrl ? { source: mlUrl } : pic; // keep original if not found (will fail at server)
+            }
+            return pic;
+          });
+          payload = { ...payload, pictures: updatedPictures };
+        }
+
+        return {
+          payload,
+          rowIndex: r.rowIndex,
+          officialCategoryId: r.draft?.officialCategoryId,
+          applianceType: r.draft?.applianceType,
+        };
+      });
       const res = await fetch('/api/ml/publish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -632,6 +826,12 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
           itemId: r.itemId,
           mlResponse: r.mlResponse,
           missingAttributes: r.missingAttributes,
+          resolvedCategoryId: r.resolvedCategoryId,
+          resolvedCategoryPath: r.resolvedCategoryPath,
+          usedFallbackCategory: r.usedFallbackCategory,
+          mlItemStatus: r.mlItemStatus,
+          mlItemSubStatus: r.mlItemSubStatus,
+          postPublishWarning: r.postPublishWarning,
         });
       });
       setPublishStates(newStates);
@@ -983,7 +1183,14 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
               )}
 
               {/* Detail panel (JSON etc.) */}
-              {isExpanded && <RowDetail row={row} publishState={pubState} />}
+              {isExpanded && (
+                <RowDetail
+                  row={row}
+                  publishState={pubState}
+                  mlImageUrls={mlImageUrls}
+                  imageUploadErrors={imageUploadErrors}
+                />
+              )}
             </div>
           );
         })}

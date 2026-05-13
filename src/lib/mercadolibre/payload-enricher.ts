@@ -35,6 +35,12 @@ export interface EnrichmentResult {
   usedFallback: boolean;
   /** Human-readable category path, e.g. "Electrodomésticos > Cocción > Microondas" */
   categoryPath: string;
+  /**
+   * Blocking category error — set when the resolved category is not a leaf node.
+   * ML accepts non-leaf category IDs on publish but immediately finalizes/closes the listing.
+   * When set, publish MUST be blocked. User must provide an exact leaf category via categoria_ml.
+   */
+  categoryError?: string;
 }
 
 /**
@@ -63,10 +69,6 @@ export async function enrichPayload(
       warnings.push(
         `La categoría "${officialCategoryId}" no existe en ML. Se usará la categoría del payload original.`
       );
-    } else if (!resolution.isLeaf) {
-      warnings.push(
-        `La categoría "${officialCategoryId}" (${resolution.categoryName}) no es una categoría hoja. ML puede rechazarla.`
-      );
     } else if (!resolution.supportsMarketplace) {
       warnings.push(
         `La categoría "${officialCategoryId}" (${resolution.categoryName}) solo acepta avisos clasificados — no compra directa.`
@@ -81,12 +83,7 @@ export async function enrichPayload(
       );
     } else {
       if (resolution.usedFallback && resolution.fallbackReason) {
-        warnings.push(`⚠️ Categoría de respaldo: ${resolution.fallbackReason}`);
-      }
-      if (!resolution.isLeaf) {
-        warnings.push(
-          `Categoría "${resolution.categoryName}" (${resolution.categoryId}) puede no ser hoja. Verificar.`
-        );
+        warnings.push(`Categoría de respaldo: ${resolution.fallbackReason}`);
       }
       if (!resolution.supportsMarketplace) {
         warnings.push(
@@ -94,6 +91,33 @@ export async function enrichPayload(
         );
       }
     }
+  }
+
+  // ── Leaf category check — BLOCKING ────────────────────────────────────────
+  // ML accepts non-leaf category IDs on publish but immediately finalizes/closes the listing.
+  // Root cause of "Finalizada por Mercado Libre — Estaba en una categoría incorrecta."
+  if (resolution && !resolution.isLeaf) {
+    const leafError = officialCategoryId
+      ? `La categoría "${officialCategoryId}" (${resolution.categoryName}) no es una categoría hoja en ML. Navegá la jerarquía y especificá la subcategoría más específica en categoria_ml.`
+      : `La categoría resuelta "${resolution.categoryName}" (${resolution.categoryId}) no es una categoría hoja. ML finalizará el anuncio inmediatamente. Especificá la categoría exacta en la columna categoria_ml. Ruta actual: ${resolution.pathString}`;
+
+    logger.warn('publish', `Blocking publish: resolved category is not a leaf`, {
+      categoryId: resolution.categoryId,
+      categoryName: resolution.categoryName,
+      pathString: resolution.pathString,
+      officialCategoryId: officialCategoryId ?? '(auto-resolved)',
+    });
+
+    return {
+      payload: { ...payload, category_id: resolution.categoryId },
+      resolution,
+      warnings,
+      missingRequired: [],
+      hasBlockingMissing: true,
+      usedFallback: resolution.usedFallback,
+      categoryPath: resolution.pathString,
+      categoryError: leafError,
+    };
   }
 
   const resolvedCategoryId = resolution?.categoryId ?? payload.category_id;
@@ -123,6 +147,7 @@ export async function enrichPayload(
       hasBlockingMissing: false,
       usedFallback: resolution?.usedFallback ?? false,
       categoryPath: resolution?.pathString ?? resolvedCategoryId,
+      categoryError: undefined,
     };
   }
 
@@ -216,5 +241,6 @@ export async function enrichPayload(
     hasBlockingMissing,
     usedFallback: resolution?.usedFallback ?? false,
     categoryPath: resolution?.pathString ?? resolvedCategoryId,
+    categoryError: undefined,
   };
 }

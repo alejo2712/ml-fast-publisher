@@ -13,6 +13,12 @@ export interface CsvRowResult {
   missingFields: MissingField[];
   errors: string[];           // hard parse errors + field validation errors
   status: 'ok' | 'warnings' | 'error';
+  /**
+   * Local image filenames referenced in the images column (e.g. "heladera-frente.jpg").
+   * These are NOT https:// URLs — they need to be matched against uploaded files before publish.
+   * Empty when all image refs are valid HTTPS URLs or when no images column is present.
+   */
+  localImageRefs: string[];
 }
 
 export interface CsvParseResult {
@@ -131,6 +137,15 @@ const LEGACY_HEADERS: Record<string, string> = {
   capacidad: 'capacidad_litros',
   watts: 'potencia_watts',
 };
+
+/**
+ * Returns true when the string looks like a local image filename (e.g. "heladera-frente.jpg")
+ * rather than an HTTPS URL. Used to detect Excel image columns that reference uploaded files.
+ */
+export function isLocalImageFilename(s: string): boolean {
+  if (!s || s.startsWith('http://') || s.startsWith('https://')) return false;
+  return /\.(jpe?g|png|webp|gif)$/i.test(s.trim());
+}
 
 /**
  * Split image URLs — supports pipe (|), semicolon (;) and comma (,) separators.
@@ -324,7 +339,7 @@ export async function parseCsvText(text: string): Promise<CsvParseResult> {
 
     if (!inputText.trim()) {
       errors.push('La columna "descripcion_corta" está vacía.');
-      results.push({ rowIndex: i + 1, rawRow: row, draft: null, payload: null, missingFields: [], errors, status: 'error' });
+      results.push({ rowIndex: i + 1, rawRow: row, draft: null, payload: null, missingFields: [], errors, status: 'error', localImageRefs: [] });
       continue;
     }
 
@@ -348,6 +363,10 @@ export async function parseCsvText(text: string): Promise<CsvParseResult> {
       );
       errors.push(...fieldErrorStrings);
 
+      // Detect local image filenames in the images column (not HTTPS URLs)
+      const allImageRefs = draft.images ?? [];
+      const localImageRefs = allImageRefs.filter(isLocalImageFilename);
+
       // Status: error if parse errors or field validation errors; warnings if only missing fields
       const status: CsvRowResult['status'] =
         errors.length > 0 ? 'error' :
@@ -362,10 +381,11 @@ export async function parseCsvText(text: string): Promise<CsvParseResult> {
         missingFields: validation.missingFields,
         errors,
         status,
+        localImageRefs,
       });
     } catch (err) {
       errors.push(`Error al procesar: ${String(err)}`);
-      results.push({ rowIndex: i + 1, rawRow: row, draft: null, payload: null, missingFields: [], errors, status: 'error' });
+      results.push({ rowIndex: i + 1, rawRow: row, draft: null, payload: null, missingFields: [], errors, status: 'error', localImageRefs: [] });
     }
   }
 

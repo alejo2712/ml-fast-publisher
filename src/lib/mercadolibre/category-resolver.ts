@@ -59,27 +59,31 @@ const MARKETPLACE_LISTING_TYPES = new Set(['gold_special', 'gold_pro', 'gold', '
 const SITE_ID = 'MLA';
 
 /**
- * Keywords that MUST appear in the category path_from_root for each appliance type.
- * Prevents domain_discovery from assigning furniture/decor categories to appliances.
+ * SPECIFIC keywords that MUST appear in the category path_from_root for each appliance type.
+ * Prevents domain_discovery from assigning furniture/decor/unrelated categories to appliances.
  * Matching is case-insensitive against the full path string.
+ *
+ * IMPORTANT: Do NOT include generic words like 'electro' here — they match almost any
+ * Electrodomésticos subcategory and would let wrong domain categories slip through.
+ * Each entry must have at least one product-type-specific term.
  */
 const APPLIANCE_PATH_KEYWORDS: Partial<Record<ApplianceType, string[]>> = {
-  refrigerator:    ['heladera', 'refriger', 'electro'],
-  freezer:         ['freezer', 'congelador', 'electro'],
-  washing_machine: ['lavarropas', 'lavadora', 'electro'],
-  dryer:           ['secarropas', 'secadora', 'electro'],
-  dishwasher:      ['lavavajillas', 'lavaplatos', 'electro'],
-  oven:            ['horno', 'electro'],
-  stove:           ['cocina', 'anafe', 'electro'],
-  microwave:       ['microondas', 'electro'],
-  air_fryer:       ['freidora', 'electro'],
-  blender:         ['licuadora', 'procesadora', 'electro'],
-  coffee_maker:    ['cafetera', 'electro'],
-  electric_kettle: ['pava', 'hervidor', 'electro'],
-  vacuum_cleaner:  ['aspiradora', 'electro'],
-  iron:            ['plancha', 'electro'],
-  toaster:         ['tostadora', 'electro'],
-  mixer:           ['mixer', 'batidora', 'electro'],
+  refrigerator:    ['heladera', 'refriger', 'refrigeración'],
+  freezer:         ['freezer', 'congelador'],
+  washing_machine: ['lavarropas', 'lavadora'],
+  dryer:           ['secarropas', 'secadora'],
+  dishwasher:      ['lavavajillas', 'lavaplatos'],
+  oven:            ['horno'],
+  stove:           ['cocina', 'anafe'],
+  microwave:       ['microondas'],
+  air_fryer:       ['freidora'],
+  blender:         ['licuadora', 'procesadora'],
+  coffee_maker:    ['cafetera'],
+  electric_kettle: ['pava', 'hervidor'],
+  vacuum_cleaner:  ['aspiradora'],
+  iron:            ['plancha'],
+  toaster:         ['tostadora'],
+  mixer:           ['mixer', 'batidora'],
 };
 
 /**

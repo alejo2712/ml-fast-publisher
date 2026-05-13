@@ -1,16 +1,22 @@
 /**
- * Integration test: load ml-real-publish-final.xlsx, parse it, and assert that
- * all attributes required for real ML publishing are present and correctly parsed.
+ * Integration tests for real-publish fixtures.
  *
  * Run: npx tsx scripts/test-real-fixture.ts
  * Or:  npm run test:real-fixture
+ *
+ * Covers:
+ *   A. ml-real-publish-final.xlsx — GTIN, dimensions, attributes, HTTPS images
+ *   B. ml-real-publish-local-images.xlsx — local image filename detection, missing-file detection
+ *   C. Category path validation — microwave/refrigerator must NOT resolve to furniture
+ *   D. isLocalImageFilename detection
  *
  * Fails with exit code 1 if any assertion fails.
  */
 import * as path from 'path';
 import * as fs from 'fs';
-import { parseCsvText, parseXlsxBuffer } from '../src/lib/csv/parser';
+import { parseCsvText, parseXlsxBuffer, isLocalImageFilename } from '../src/lib/csv/parser';
 import { buildMLPayload } from '../src/lib/payload-builder';
+import { validatePathForApplianceType, APPLIANCE_FALLBACK_CATEGORIES } from '../src/lib/mercadolibre/category-resolver';
 import type { MLAttribute } from '../src/types';
 
 const FIXTURE_PATH = path.resolve(__dirname, '../tests/fixtures/ml-real-publish-final.xlsx');
@@ -134,6 +140,106 @@ async function main() {
   fridgeAttrs.forEach((a) => console.log(`  ${a.id}: ${a.value_name}`));
   console.log('\n── Microwave attributes (before enrichment) ────────────────────────');
   microwaveAttrs.forEach((a) => console.log(`  ${a.id}: ${a.value_name}`));
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // PART B: Local image fixture tests
+  // ══════════════════════════════════════════════════════════════════════════
+
+  console.log('\n\n══ B. Local image fixture: ml-real-publish-local-images.xlsx ═══════════════\n');
+  const LOCAL_FIXTURE = path.resolve(__dirname, '../tests/fixtures/ml-real-publish-local-images.xlsx');
+  const IMAGES_DIR = path.resolve(__dirname, '../tests/fixtures/images');
+
+  console.log('── File check ──────────────────────────────────────────────────────');
+  if (fs.existsSync(LOCAL_FIXTURE)) {
+    console.log(`  ✅ Local images fixture found`);
+  } else {
+    console.log(`  ⚠️  Local images fixture not found — run: npx tsx scripts/generate-local-images-fixture.ts`);
+  }
+
+  const imageFiles = new Map<string, string>();
+  if (fs.existsSync(IMAGES_DIR)) {
+    fs.readdirSync(IMAGES_DIR).forEach((f) => imageFiles.set(f.toLowerCase(), f));
+  }
+
+  assert(imageFiles.has('heladera-frente.jpg'), 'heladera-frente.jpg exists in tests/fixtures/images/');
+  assert(imageFiles.has('heladera-lateral.jpg'), 'heladera-lateral.jpg exists');
+  assert(imageFiles.has('microondas-frente.jpg'), 'microondas-frente.jpg exists');
+  assert(imageFiles.has('lavarropas-frente.jpg'), 'lavarropas-frente.jpg exists');
+  assert(!imageFiles.has('lavarropas-missing.jpg'), 'lavarropas-missing.jpg is ABSENT (intentional)');
+
+  if (fs.existsSync(LOCAL_FIXTURE)) {
+    const localBuf = fs.readFileSync(LOCAL_FIXTURE);
+    const localAb = localBuf.buffer.slice(localBuf.byteOffset, localBuf.byteOffset + localBuf.byteLength) as ArrayBuffer;
+    const localCsv = await parseXlsxBuffer(localAb);
+    const localResult = await parseCsvText(localCsv);
+
+    console.log('\n── Local image fixture parsing ─────────────────────────────────────');
+    assert(localResult.rows.length === 4, `4 rows parsed from local-images fixture`, `got ${localResult.rows.length}`);
+
+    const [heladeraRow, microwaveRow2, lavarropasRow, cafeteraRow] = localResult.rows;
+
+    assert(heladeraRow?.localImageRefs.length === 2, 'Heladera: 2 localImageRefs', `got ${JSON.stringify(heladeraRow?.localImageRefs)}`);
+    assert(heladeraRow?.localImageRefs.includes('heladera-frente.jpg'), 'Heladera: heladera-frente.jpg in refs');
+    assert(heladeraRow?.localImageRefs.includes('heladera-lateral.jpg'), 'Heladera: heladera-lateral.jpg in refs');
+    assert(heladeraRow?.draft?.gtin === '7509546069525', 'Heladera: GTIN parsed', `got ${heladeraRow?.draft?.gtin}`);
+    assert(heladeraRow?.draft?.height === 165, 'Heladera: height=165', `got ${heladeraRow?.draft?.height}`);
+
+    assert(microwaveRow2?.localImageRefs.length === 1, 'Microondas: 1 localImageRef', `got ${JSON.stringify(microwaveRow2?.localImageRefs)}`);
+    assert(microwaveRow2?.localImageRefs.includes('microondas-frente.jpg'), 'Microondas: microondas-frente.jpg in refs');
+
+    assert(lavarropasRow?.localImageRefs.length === 2, 'Lavarropas: 2 localImageRefs', `got ${JSON.stringify(lavarropasRow?.localImageRefs)}`);
+    assert(lavarropasRow?.localImageRefs.includes('lavarropas-missing.jpg'), 'Lavarropas: missing ref detected');
+
+    assert(cafeteraRow?.localImageRefs.length === 0, 'Cafetera: 0 localImageRefs (HTTPS URL)', `got ${JSON.stringify(cafeteraRow?.localImageRefs)}`);
+
+    // File matching simulation
+    console.log('\n── Missing file detection ───────────────────────────────────────────');
+    const lavarropasMissing = lavarropasRow?.localImageRefs.filter((r) => !imageFiles.has(r.toLowerCase())) ?? [];
+    assert(lavarropasMissing.length === 1, 'Lavarropas: 1 missing file detected', `missing: ${JSON.stringify(lavarropasMissing)}`);
+    assert(lavarropasMissing[0] === 'lavarropas-missing.jpg', 'Missing file is lavarropas-missing.jpg');
+
+    const heladeraMatched = heladeraRow?.localImageRefs.filter((r) => imageFiles.has(r.toLowerCase())) ?? [];
+    assert(heladeraMatched.length === 2, 'Heladera: both files matched', `matched: ${JSON.stringify(heladeraMatched)}`);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // PART C: isLocalImageFilename detection
+  // ══════════════════════════════════════════════════════════════════════════
+
+  console.log('\n\n══ C. isLocalImageFilename detection ═══════════════════════════════════════\n');
+
+  assert(isLocalImageFilename('heladera-frente.jpg'), 'heladera-frente.jpg → local');
+  assert(isLocalImageFilename('photo.png'), 'photo.png → local');
+  assert(isLocalImageFilename('img.webp'), 'img.webp → local');
+  assert(!isLocalImageFilename('https://example.com/foto.jpg'), 'https://... → NOT local');
+  assert(!isLocalImageFilename('http://example.com/foto.jpg'), 'http://... → NOT local');
+  assert(!isLocalImageFilename(''), 'empty string → NOT local');
+  assert(!isLocalImageFilename('doc.txt'), '.txt → NOT local');
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // PART D: Category path validation — keyword fix
+  // ══════════════════════════════════════════════════════════════════════════
+
+  console.log('\n\n══ D. Category path keyword validation ════════════════════════════════════\n');
+
+  const microwaveCorrect = [{ id: 'A', name: 'Electrodomésticos' }, { id: 'B', name: 'Cocción' }, { id: 'C', name: 'Microondas' }];
+  const microwaveFurniture = [{ id: 'A', name: 'Muebles y Hogar' }, { id: 'B', name: 'Cocina' }, { id: 'C', name: 'Utensilios' }];
+  const microwaveWrongElectro = [{ id: 'A', name: 'Electrodomésticos' }, { id: 'B', name: 'Climatización' }, { id: 'C', name: 'Ventiladores' }];
+
+  assert(validatePathForApplianceType(microwaveCorrect, 'microwave'), 'Microwave: correct path passes');
+  assert(!validatePathForApplianceType(microwaveFurniture, 'microwave'), 'Microwave: furniture path BLOCKED');
+  assert(!validatePathForApplianceType(microwaveWrongElectro, 'microwave'), 'Microwave: ventiladores path BLOCKED (no microondas keyword)');
+
+  const fridgeCorrect = [{ id: 'A', name: 'Electrodomésticos' }, { id: 'B', name: 'Refrigeración' }, { id: 'C', name: 'Heladeras' }];
+  const fridgeFurniture = [{ id: 'A', name: 'Muebles y Hogar' }, { id: 'B', name: 'Almacenamiento' }, { id: 'C', name: 'Estantes' }];
+  const fridgeWrongElectro = [{ id: 'A', name: 'Electrodomésticos' }, { id: 'B', name: 'Cocción' }, { id: 'C', name: 'Hornos' }];
+
+  assert(validatePathForApplianceType(fridgeCorrect, 'refrigerator'), 'Refrigerator: correct path passes');
+  assert(!validatePathForApplianceType(fridgeFurniture, 'refrigerator'), 'Refrigerator: furniture path BLOCKED');
+  assert(!validatePathForApplianceType(fridgeWrongElectro, 'refrigerator'), 'Refrigerator: hornos path BLOCKED (no heladera/refriger keyword)');
+
+  assert(!!APPLIANCE_FALLBACK_CATEGORIES['refrigerator'], 'Refrigerator fallback category defined');
+  assert(!!APPLIANCE_FALLBACK_CATEGORIES['microwave'], 'Microwave fallback category defined');
 
   // ── Summary ───────────────────────────────────────────────────────────────
   const total = passed + failed;

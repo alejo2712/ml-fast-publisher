@@ -239,6 +239,35 @@ export async function POST(request: NextRequest) {
       resolvedCategoryPath = enriched.categoryPath;
       usedFallbackCategory = enriched.usedFallback;
 
+      // Block publish if the resolved category is not a leaf (ML finalizes listings immediately)
+      if (enriched.categoryError) {
+        const msg = enriched.categoryError;
+        logger.warn('publish', `Blocking publish: category error`, { msg: msg.slice(0, 120) });
+        const result: MLPublishResult = {
+          rowIndex,
+          status: 'preflight_failed',
+          message: msg,
+          resolvedCategoryId,
+          resolvedCategoryPath,
+          usedFallbackCategory,
+        };
+        results.push(result);
+        if (userId) {
+          prisma.publishHistory.create({
+            data: {
+              userId, draftId: draftId ?? null,
+              status: 'PREFLIGHT_FAILED', dryRun: false,
+              payload: item.payload as object,
+              errorMessage: msg,
+              mlCategoryId: resolvedCategoryId,
+              mlCategoryPath: resolvedCategoryPath,
+              environment,
+            },
+          }).catch(() => {});
+        }
+        continue;
+      }
+
       // Block publish if non-conditional required attributes are still missing after defaults
       if (enriched.hasBlockingMissing) {
         const blocking = enriched.missingRequired.filter((m) => !m.conditionalRequired);
