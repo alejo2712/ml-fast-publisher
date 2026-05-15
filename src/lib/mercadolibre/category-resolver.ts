@@ -13,6 +13,7 @@
 
 import type { ApplianceType } from '@/types';
 import { mlGet } from './client';
+import { logger } from '@/lib/logger';
 
 export interface MLCategoryResolution {
   categoryId: string;
@@ -67,7 +68,7 @@ const SITE_ID = 'MLA';
  * Electrodomésticos subcategory and would let wrong domain categories slip through.
  * Each entry must have at least one product-type-specific term.
  */
-const APPLIANCE_PATH_KEYWORDS: Partial<Record<ApplianceType, string[]>> = {
+export const APPLIANCE_PATH_KEYWORDS: Partial<Record<ApplianceType, string[]>> = {
   refrigerator:    ['heladera', 'refriger', 'refrigeración'],
   freezer:         ['freezer', 'congelador'],
   washing_machine: ['lavarropas', 'lavadora'],
@@ -167,9 +168,27 @@ export async function resolveCategory(
     const fallbackId = APPLIANCE_FALLBACK_CATEGORIES[applianceType];
     const reason = `domain_discovery resolvió "${resolution.categoryName}" (${resolution.pathString}) pero el producto es "${applianceType}". Usando categoría de respaldo.`;
 
+    logger.warn('category-resolver', 'domain_discovery returned wrong-domain category', {
+      applianceType,
+      resolvedCategory: resolution.categoryName,
+      resolvedPath: resolution.pathString,
+      fallbackId: fallbackId ?? '(none)',
+    });
+
     if (fallbackId) {
       const fallbackResolution = await buildResolution(fallbackId, '', '', accessToken);
       if (fallbackResolution) {
+        // Also validate that the fallback category's path matches the expected type.
+        // If MLA4749 resolves to something unexpected, we refuse to use it too.
+        if (!validatePathForApplianceType(fallbackResolution.pathFromRoot, applianceType)) {
+          logger.warn('category-resolver', 'Fallback category path also fails validation — returning null', {
+            applianceType,
+            fallbackId,
+            fallbackPath: fallbackResolution.pathString,
+          });
+          titleCache.set(cacheKey, null);
+          return null;
+        }
         const result: MLCategoryResolution = {
           ...fallbackResolution,
           usedFallback: true,
@@ -180,14 +199,18 @@ export async function resolveCategory(
       }
     }
 
-    // Even if fallback fails, flag the resolution as potentially wrong
-    const result: MLCategoryResolution = {
-      ...resolution,
-      usedFallback: true,
-      fallbackReason: reason,
-    };
-    titleCache.set(cacheKey, result);
-    return result;
+    // Fallback category lookup failed (API error/timeout).
+    // NEVER return the wrong-domain resolution — returning null means the enricher
+    // keeps the original payload category_id (our static hardcoded safe ID) rather
+    // than publishing in an unrelated category (e.g., furniture for a microwave).
+    logger.warn('category-resolver', 'Fallback category lookup failed — returning null to prevent wrong-domain publish', {
+      applianceType,
+      rejectedCategory: resolution.categoryName,
+      rejectedPath: resolution.pathString,
+      fallbackId: fallbackId ?? '(none)',
+    });
+    titleCache.set(cacheKey, null);
+    return null;
   }
 
   titleCache.set(cacheKey, resolution);

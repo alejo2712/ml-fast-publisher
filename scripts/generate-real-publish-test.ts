@@ -1,16 +1,17 @@
 /**
- * Generates tests/fixtures/ml-real-publish-test.xlsx
+ * Generates tests/fixtures/ml-real-publish-final.xlsx
  * 2 products optimised for real ML publishing (1 refrigerator + 1 microwave).
  *
- * Image URLs are verified via HTTP HEAD before being written to the fixture.
- * Any URL returning non-200 is replaced with a known-good fallback.
+ * Images: local PNG filenames referencing tests/fixtures/images/*.png
+ * These files are uploaded to ML's CDN before publishing via /api/ml/upload-pictures.
+ * Generate them first with: npx tsx scripts/generate-test-images.ts
  *
  * Run: npx tsx scripts/generate-real-publish-test.ts
  */
 import * as XLSX from 'xlsx';
 import * as path from 'path';
 import * as fs from 'fs';
-import { parseCsvText, parseXlsxBuffer } from '../src/lib/csv/parser';
+import { parseCsvText, parseXlsxBuffer, isLocalImageFilename } from '../src/lib/csv/parser';
 
 // ── Column headers (must exactly match CSV_COLUMNS in src/lib/csv/template.ts) ─
 
@@ -49,79 +50,18 @@ const HEADERS = [
   'categoria_ml',
 ];
 
-// ── URL verification ──────────────────────────────────────────────────────────
+// ── Local image filenames ─────────────────────────────────────────────────────
+// These reference files in tests/fixtures/images/ (1200×1200 white PNGs).
+// Generate them with: npx tsx scripts/generate-test-images.ts
+// At publish time, the bulk flow uploads them to ML's CDN via /api/ml/upload-pictures
+// and substitutes ML-hosted URLs into the payload before calling POST /items.
 
-/**
- * Verify a URL returns HTTP 200 (follows redirects, 5s timeout).
- * Uses HEAD to avoid downloading the full image body.
- */
-async function verifyUrl(url: string): Promise<{ ok: boolean; status: number }> {
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-    const res = await fetch(url, {
-      method: 'HEAD',
-      signal: controller.signal,
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FastPublisher/1.0)' },
-      redirect: 'follow',
-    });
-    clearTimeout(timeout);
-    return { ok: res.status === 200, status: res.status };
-  } catch {
-    return { ok: false, status: 0 };
-  }
-}
+const FRIDGE_IMG1  = 'refrigerator-front-1200.png';
+const FRIDGE_IMG2  = 'refrigerator-open-1200.png';
+const MICRO_IMG1   = 'microwave-front-1200.png';
+const MICRO_IMG2   = 'microwave-side-1200.png';
 
-/**
- * Pick the first URL from `candidates` that returns HTTP 200.
- * Returns the verified URL and its index, or null if all fail.
- */
-async function pickFirstWorking(
-  candidates: string[]
-): Promise<{ url: string; index: number } | null> {
-  for (let i = 0; i < candidates.length; i++) {
-    const { ok, status } = await verifyUrl(candidates[i]);
-    const icon = ok ? '✅' : '❌';
-    console.log(`  ${icon} [${status}] ${candidates[i]}`);
-    if (ok) return { url: candidates[i], index: i };
-  }
-  return null;
-}
-
-// ── Image candidate pools ─────────────────────────────────────────────────────
-// Primary: Wikimedia Commons — stable, HTTPS, publicly accessible.
-// Fallback: placehold.co (200 verified) — placeholder only, not real product photo.
-//
-// Verified 2026-05-12 (HTTP 200 confirmed):
-//   https://upload.wikimedia.org/wikipedia/commons/8/89/Refrigerator.jpg
-//   https://upload.wikimedia.org/wikipedia/commons/b/b8/Fridge.jpg
-//   https://upload.wikimedia.org/wikipedia/commons/4/4e/Microwave_oven.jpg
-//   https://upload.wikimedia.org/wikipedia/commons/b/bb/Microwave_Oven.jpg
-
-const FRIDGE_IMAGE_CANDIDATES = [
-  'https://upload.wikimedia.org/wikipedia/commons/8/89/Refrigerator.jpg',
-  'https://upload.wikimedia.org/wikipedia/commons/b/b8/Fridge.jpg',
-  'https://upload.wikimedia.org/wikipedia/commons/0/08/Refrigerator_and_microwave.jpg',
-  'https://placehold.co/800x600/f5f5f5/333333.jpg?text=Heladera',
-];
-
-const FRIDGE_IMAGE2_CANDIDATES = [
-  'https://upload.wikimedia.org/wikipedia/commons/b/b8/Fridge.jpg',
-  'https://upload.wikimedia.org/wikipedia/commons/0/08/Refrigerator_and_microwave.jpg',
-  'https://placehold.co/800x600/e8e8e8/333333.jpg?text=Heladera+interior',
-];
-
-const MICROWAVE_IMAGE_CANDIDATES = [
-  'https://upload.wikimedia.org/wikipedia/commons/4/4e/Microwave_oven.jpg',
-  'https://upload.wikimedia.org/wikipedia/commons/b/bb/Microwave_Oven.jpg',
-  'https://placehold.co/800x600/f5f5f5/333333.jpg?text=Microondas',
-];
-
-const MICROWAVE_IMAGE2_CANDIDATES = [
-  'https://upload.wikimedia.org/wikipedia/commons/b/bb/Microwave_Oven.jpg',
-  'https://upload.wikimedia.org/wikipedia/commons/4/4e/Microwave_oven.jpg',
-  'https://placehold.co/800x600/e8e8e8/333333.jpg?text=Microondas+interior',
-];
+const IMAGES_DIR = path.resolve(__dirname, '../tests/fixtures/images');
 
 // ── Product data ──────────────────────────────────────────────────────────────
 
@@ -217,102 +157,86 @@ function buildMicrowave(img1: string, img2: string): Row {
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
-  // ── Step 1: Verify image URLs ────────────────────────────────────────────────
+  console.log('\n══ generate-real-publish-test ══════════════════════════════════\n');
 
-  console.log('\n── Image URL verification ───────────────────────────────────────');
+  // ── Step 1: Verify local image files exist ────────────────────────────────────
 
-  console.log('\nHeladera — image 1 candidates:');
-  const fridgeImg1Result = await pickFirstWorking(FRIDGE_IMAGE_CANDIDATES);
-  if (!fridgeImg1Result) throw new Error('No working URL found for fridge image 1');
-  const fridgeImg1 = fridgeImg1Result.url;
-
-  // Avoid using the same URL twice for the same product
-  const fridge2Candidates = FRIDGE_IMAGE2_CANDIDATES.filter((u) => u !== fridgeImg1);
-  console.log('\nHeladera — image 2 candidates:');
-  const fridgeImg2Result = await pickFirstWorking(fridge2Candidates);
-  if (!fridgeImg2Result) throw new Error('No working URL found for fridge image 2');
-  const fridgeImg2 = fridgeImg2Result.url;
-
-  console.log('\nMicroondas — image 1 candidates:');
-  const microwaveImg1Result = await pickFirstWorking(MICROWAVE_IMAGE_CANDIDATES);
-  if (!microwaveImg1Result) throw new Error('No working URL found for microwave image 1');
-  const microwaveImg1 = microwaveImg1Result.url;
-
-  const microwave2Candidates = MICROWAVE_IMAGE2_CANDIDATES.filter((u) => u !== microwaveImg1);
-  console.log('\nMicroondas — image 2 candidates:');
-  const microwaveImg2Result = await pickFirstWorking(microwave2Candidates);
-  if (!microwaveImg2Result) throw new Error('No working URL found for microwave image 2');
-  const microwaveImg2 = microwaveImg2Result.url;
-
-  console.log('\n── Selected image URLs ──────────────────────────────────────────');
-  console.log(`  Heladera   img1: ${fridgeImg1}`);
-  console.log(`  Heladera   img2: ${fridgeImg2}`);
-  console.log(`  Microondas img1: ${microwaveImg1}`);
-  console.log(`  Microondas img2: ${microwaveImg2}`);
-
-  const allVerifiedUrls = [fridgeImg1, fridgeImg2, microwaveImg1, microwaveImg2];
-  const hasPlaceholders = allVerifiedUrls.some((u) => u.includes('placehold.co'));
-  if (hasPlaceholders) {
-    console.log('\n⚠️  WARNING: some images are placeholders (placehold.co).');
-    console.log('   These are valid HTTPS images but are not real product photos.');
-    console.log('   ML may accept them for test listings but they should be replaced for production.');
-  } else {
-    console.log('\n✅ All images are real product photos from Wikimedia Commons.');
+  console.log('── Image file check ─────────────────────────────────────────────');
+  const requiredFiles = [FRIDGE_IMG1, FRIDGE_IMG2, MICRO_IMG1, MICRO_IMG2];
+  const missing: string[] = [];
+  for (const f of requiredFiles) {
+    const fullPath = path.join(IMAGES_DIR, f);
+    if (fs.existsSync(fullPath)) {
+      const size = (fs.statSync(fullPath).size / 1024).toFixed(1);
+      console.log(`  ✅ ${f} (${size} KB)`);
+    } else {
+      console.log(`  ❌ ${f} — MISSING`);
+      missing.push(f);
+    }
   }
 
-  // ── Step 2: Build instructions sheet content ──────────────────────────────────
+  if (missing.length > 0) {
+    console.error('\n❌ Missing image files. Run first:\n   npx tsx scripts/generate-test-images.ts\n');
+    process.exit(1);
+  }
+
+  // ── Step 2: Build instructions sheet ──────────────────────────────────────────
 
   const instrRows: string[][] = [
     ['ARCHIVO DE TEST — PUBLICACION REAL EN MERCADO LIBRE'],
     ['Generado por FastPublisher — scripts/generate-real-publish-test.ts'],
     [`Generado: ${new Date().toISOString()}`],
     [''],
-    ['IMPORTANTE — LEER ANTES DE USAR'],
+    ['COMO USAR ESTE ARCHIVO'],
     [''],
-    ['1. Este archivo esta disenado para pruebas de publicacion REAL en Mercado Libre.'],
-    ['2. Usar UNICAMENTE con MERCADOLIBRE_DRY_RUN=false (publicacion real activada).'],
-    ['3. Las imagenes fueron verificadas HTTP 200 al momento de generar este archivo.'],
+    ['1. Subilo en FastPublisher → modo bulk → "Subir archivo".'],
+    ['2. Junto con el Excel, subí las 4 imagenes PNG de tests/fixtures/images/'],
+    ['   - refrigerator-front-1200.png'],
+    ['   - refrigerator-open-1200.png'],
+    ['   - microwave-front-1200.png'],
+    ['   - microwave-side-1200.png'],
+    ['3. El sistema subirá las imágenes al CDN de ML antes de publicar.'],
+    ['4. Hacé clic en "Publicar en Mercado Libre" → confirmá el modal.'],
+    ['5. Revisá PublishHistory para ver el resultado por producto.'],
     [''],
     ['PRODUCTOS INCLUIDOS'],
-    ['Fila', 'Producto',                              'Marca',   'Categoria esperada',   'Precio ARS'],
-    ['2',    'Heladera Samsung No Frost 290L Blanca', 'Samsung', 'MLA-REFRIGERATORS',    '450.000'],
-    ['3',    'Microondas Samsung 23L 1150W Blanco',   'Samsung', 'MLA-MICROWAVES',       '115.000'],
+    ['Fila', 'Producto',                              'Marca',   'Categoria esperada',            'Precio ARS'],
+    ['2',    'Heladera Samsung No Frost 290L Blanca', 'Samsung', 'Heladeras y Freezers (leaf)',   '450.000'],
+    ['3',    'Microondas Samsung 23L 1150W Blanco',   'Samsung', 'Electrodomésticos > Microondas', '115.000'],
     [''],
-    ['IMAGENES VERIFICADAS (HTTP 200 al generar)'],
-    ['Heladera img1',   fridgeImg1],
-    ['Heladera img2',   fridgeImg2],
-    ['Microondas img1', microwaveImg1],
-    ['Microondas img2', microwaveImg2],
+    ['IMAGENES (archivos locales — se suben a ML CDN antes de publicar)'],
+    ['Heladera img1',   FRIDGE_IMG1],
+    ['Heladera img2',   FRIDGE_IMG2],
+    ['Microondas img1', MICRO_IMG1],
+    ['Microondas img2', MICRO_IMG2],
+    ['Formato',         '1200×1200 px, fondo blanco, sin texto, sin logos — cumple requisitos ML'],
     [''],
     ['ENVIO'],
-    ['Ambos productos usan envio=not_specified (mas seguro — evita errores de me2).'],
-    ['Si el vendedor tiene me2 habilitado, cambiar a me2 en la columna "envio".'],
+    ['Ambos productos usan envio=not_specified (evita errores de me2).'],
     [''],
     ['CATEGORIA ML (categoria_ml)'],
-    ['La columna "categoria_ml" esta vacia. El sistema la resuelve automaticamente.'],
-    ['Si la resolucion automatica falla, ingresar el ID exacto de ML (ej: MLA1577).'],
-    ['Recordar: ML requiere categoria HOJA (sin hijos).'],
+    ['La columna categoria_ml esta vacia — el sistema la resuelve automaticamente.'],
+    ['La categoría resuelta DEBE contener palabras clave de la categoría esperada.'],
+    ['Si falla: ingresar ID exacto de categoria HOJA en la columna categoria_ml.'],
     [''],
     ['ATRIBUTOS INCLUIDOS'],
-    ['codigo_gtin',       '7709545018831 (heladera) → GTIN en ML (requerido por algunas categorias)'],
-    ['fabricante',        'Samsung Electronics Argentina S.A. → MANUFACTURER en ML'],
-    ['tipo_alimentacion', '220V → POWER_SUPPLY_TYPE en ML'],
-    ['requiere_armado',   'no → REQUIRES_ASSEMBLY en ML'],
-    ['alto_cm',           '172 (heladera) / 27 (microondas) → HEIGHT en ML'],
-    ['ancho_cm',          '60 (heladera) / 52 (microondas) → WIDTH en ML'],
-    ['profundidad_cm',    '65 (heladera) / 40 (microondas) → DEPTH en ML'],
+    ['codigo_gtin',       '7709545018831 (heladera) → GTIN en ML'],
+    ['fabricante',        'Samsung Electronics Argentina S.A. → MANUFACTURER'],
+    ['tipo_alimentacion', '220V → POWER_SUPPLY_TYPE'],
+    ['alto_cm',           '172 (heladera) / 27 (microondas) → HEIGHT'],
+    ['ancho_cm',          '60 (heladera) / 52 (microondas) → WIDTH'],
+    ['profundidad_cm',    '65 (heladera) / 40 (microondas) → DEPTH'],
     [''],
-    ['QUE HACER SI FALLA'],
-    ['1. Revisar mlResponse en PublishHistory (panel Historial).'],
-    ['2. Causas comunes: imagenes no accesibles, categoria incorrecta, atributo faltante.'],
-    ['3. Ver docs/mercadolibre-real-publish-errors.md para referencia de errores.'],
-    ['4. Si la categoria falla: agregar ID exacto en columna "categoria_ml".'],
+    ['SEGURIDAD DE CATEGORIA (nueva validacion)'],
+    ['Si domain_discovery devuelve Mesas Ratonas / Muebles para un microondas → BLOQUEADO'],
+    ['El sistema verifica que el camino de categoría contenga la palabra clave correcta.'],
+    ['Microondas requiere "microondas" en el camino. Heladera requiere "heladera" o "refriger".'],
   ];
 
-  // ── Step 3: Build and write the XLSX file ─────────────────────────────────────
+  // ── Step 3: Build and write the XLSX file ────────────────────────────────────
 
-  const fridge = buildFridge(fridgeImg1, fridgeImg2);
-  const microwave = buildMicrowave(microwaveImg1, microwaveImg2);
+  const fridge    = buildFridge(FRIDGE_IMG1, FRIDGE_IMG2);
+  const microwave = buildMicrowave(MICRO_IMG1, MICRO_IMG2);
 
   const buildRow = (data: Row) => HEADERS.map((h) => data[h] ?? '');
   const dataRows = [fridge, microwave].map(buildRow);
@@ -321,7 +245,7 @@ async function main() {
   ws['!cols'] = HEADERS.map((h) => ({ wch: Math.max(h.length + 6, 20) }));
 
   const wsInstr = XLSX.utils.aoa_to_sheet(instrRows);
-  wsInstr['!cols'] = [{ wch: 24 }, { wch: 100 }];
+  wsInstr['!cols'] = [{ wch: 26 }, { wch: 90 }];
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Productos');
@@ -333,95 +257,71 @@ async function main() {
   XLSX.writeFile(wb, outPath);
 
   console.log(`\n✅ Generated: ${outPath}`);
-  console.log(`   Products: 2 (1 heladera + 1 microondas)`);
 
   // ── Step 4: Parse + validate ──────────────────────────────────────────────────
 
   console.log('\n── Parser validation ────────────────────────────────────────────');
-
   const fileBuffer = fs.readFileSync(outPath);
-  const ab = fileBuffer.buffer.slice(
-    fileBuffer.byteOffset,
-    fileBuffer.byteOffset + fileBuffer.byteLength
-  ) as ArrayBuffer;
+  const ab = fileBuffer.buffer.slice(fileBuffer.byteOffset, fileBuffer.byteOffset + fileBuffer.byteLength) as ArrayBuffer;
   const csvText = await parseXlsxBuffer(ab);
   const result = await parseCsvText(csvText);
 
-  console.log(`Total rows parsed: ${result.rows.length}`);
+  console.log(`Rows: ${result.rows.length} (${result.totalOk} ok, ${result.totalWarnings} warnings, ${result.totalErrors} errors)`);
 
   for (const row of result.rows) {
     const icon = row.status === 'ok' ? '✅' : row.status === 'warnings' ? '⚠️ ' : '❌';
     const title = row.draft?.title ?? row.errors[0] ?? '(no title)';
     console.log(`\nRow ${row.rowIndex}: ${icon} ${row.status.toUpperCase()} — ${title}`);
-
     if (row.draft) {
-      console.log(`  applianceType      : ${row.draft.applianceType}`);
-      console.log(`  mlCategoryId       : ${row.draft.mlCategoryId}  (static — overridden by resolver at publish)`);
-      console.log(`  price              : ${row.draft.price} ${row.draft.currency}`);
-      console.log(`  condition          : ${row.draft.condition}`);
-      console.log(`  images             : ${row.draft.images.length} url(s)`);
-      console.log(`  shipping.mode      : ${row.draft.shipping.mode}`);
-      // These are the attributes that were historically missing — verify they flow through
-      console.log(`  gtin               : ${row.draft.gtin ?? '(MISSING — WILL FAIL FOR REFRIGERATORS)'}`);
-      console.log(`  height             : ${row.draft.height != null ? row.draft.height + ' cm' : '(MISSING — WILL FAIL)'}`);
-      console.log(`  width              : ${row.draft.width != null ? row.draft.width + ' cm' : '(MISSING — WILL FAIL)'}`);
-      console.log(`  depth              : ${row.draft.depth != null ? row.draft.depth + ' cm' : '(MISSING — WILL FAIL)'}`);
-      if (row.draft.manufacturer)
-        console.log(`  manufacturer       : ${row.draft.manufacturer}`);
-      if (row.draft.powerSupplyType)
-        console.log(`  powerSupplyType    : ${row.draft.powerSupplyType}`);
-      if (row.draft.requiresAssembly !== undefined)
-        console.log(`  requiresAssembly   : ${row.draft.requiresAssembly}`);
-      if (row.draft.officialCategoryId)
-        console.log(`  officialCategoryId : ${row.draft.officialCategoryId}`);
+      console.log(`  applianceType : ${row.draft.applianceType}`);
+      console.log(`  gtin          : ${row.draft.gtin ?? '(none)'}`);
+      console.log(`  height        : ${row.draft.height != null ? row.draft.height + ' cm' : '(none)'}`);
+      console.log(`  images        : ${row.draft.images.join(', ')}`);
+      console.log(`  localImageRefs: ${row.localImageRefs.join(', ') || '(none)'}`);
     }
-
-    if (row.missingFields.length > 0)
-      console.log(`  missing fields     : ${row.missingFields.map((f) => f.id).join(', ')}`);
-    if (row.errors.length > 0)
-      console.log(`  errors             : ${row.errors.join('; ')}`);
+    if (row.errors.length > 0) console.log(`  errors: ${row.errors.join('; ')}`);
   }
 
-  // ── Step 5: Image format check ────────────────────────────────────────────────
+  // ── Step 5: Image file reference check ───────────────────────────────────────
 
-  console.log('\n── Image URL format check ───────────────────────────────────────');
+  console.log('\n── Image reference check ────────────────────────────────────────');
   const allImages = result.rows.flatMap((r) => r.draft?.images ?? []);
-  for (const img of allImages) {
-    const isHttps = img.startsWith('https://');
-    console.log(`  ${isHttps ? '✅' : '❌'} ${img}`);
+  const localRefs = allImages.filter(isLocalImageFilename);
+  const httpsUrls = allImages.filter((i) => i.startsWith('https://'));
+
+  console.log(`  Local filenames  : ${localRefs.length}`);
+  console.log(`  HTTPS URLs       : ${httpsUrls.length}`);
+
+  for (const ref of localRefs) {
+    const exists = fs.existsSync(path.join(IMAGES_DIR, ref));
+    console.log(`  ${exists ? '✅' : '❌'} ${ref} ${exists ? '— file present' : '— FILE MISSING'}`);
   }
 
-  // ── Step 6: Summary ───────────────────────────────────────────────────────────
-
-  console.log('\n── Parser summary ───────────────────────────────────────────────');
-  console.log(`  ✅ ok rows      : ${result.totalOk}`);
-  console.log(`  ⚠️  warning rows : ${result.totalWarnings}`);
-  console.log(`  ❌ error rows   : ${result.totalErrors}`);
-
-  const badImages = allImages.filter((img) => !img.startsWith('https://'));
-  if (badImages.length > 0) {
-    console.log(`\n❌ ${badImages.length} non-HTTPS image(s) — will block real ML publish`);
-    badImages.forEach((img) => console.log(`   → ${img}`));
+  if (localRefs.length === 0) {
+    console.error('\n❌ No local image filenames found in fixture — check imagenes column');
     process.exit(1);
-  } else {
-    console.log(`\n✅ All ${allImages.length} images are HTTPS — format OK for real ML publish`);
   }
 
-  // ── Step 7: Expected category resolution ─────────────────────────────────────
+  const missingLocalFiles = localRefs.filter((ref) => !fs.existsSync(path.join(IMAGES_DIR, ref)));
+  if (missingLocalFiles.length > 0) {
+    console.error(`\n❌ ${missingLocalFiles.length} referenced image file(s) not found in tests/fixtures/images/`);
+    process.exit(1);
+  }
 
-  console.log('\n── Expected category resolution (via ML domain_discovery) ───────');
-  console.log('  Heladera Samsung No Frost 290L Blanca  → MLA-REFRIGERATORS (leaf)');
-  console.log('  Microondas Samsung 23L 1150W Blanco    → MLA-MICROWAVES (leaf)');
-  console.log('  Note: actual IDs resolved at publish time via ML API');
+  // ── Step 6: Expected category resolution ─────────────────────────────────────
 
-  // ── Step 8: Next steps ────────────────────────────────────────────────────────
+  console.log('\n── Category resolution expectations ─────────────────────────────');
+  console.log('  Heladera:   path MUST contain "heladera" or "refriger"');
+  console.log('  Microondas: path MUST contain "microondas"');
+  console.log('  Wrong path (e.g., Mesas Ratonas) → BLOCKED before POST /items');
 
-  console.log('\n── Next steps ───────────────────────────────────────────────────');
-  console.log(`  1. MERCADOLIBRE_DRY_RUN must be "false" in Vercel env for real publish`);
-  console.log(`  2. Upload ml-real-publish-final.xlsx in FastPublisher bulk mode`);
-  console.log(`  3. Click "Publicar en Mercado Libre" — confirm the modal`);
-  console.log(`  4. Check PublishHistory for ML response per item`);
-  console.log(`  5. If category fails: add exact ML ID in "categoria_ml" column\n`);
+  // ── Step 7: Next steps ────────────────────────────────────────────────────────
+
+  console.log('\n── Ready to use ─────────────────────────────────────────────────');
+  console.log('  File:    tests/fixtures/ml-real-publish-final.xlsx');
+  console.log('  Images:  tests/fixtures/images/ (4 PNG files)');
+  console.log('  Upload both Excel + PNG files in the FastPublisher bulk UI.');
+  console.log('  Images will be uploaded to ML CDN before publishing.\n');
 }
 
 main().catch((err) => { console.error(err); process.exit(1); });

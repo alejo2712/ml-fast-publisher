@@ -18,11 +18,14 @@ function isGarbage(value: string): boolean {
 /**
  * Accepts:
  * - https:// and http:// URLs (external images)
- * - /uploads/... paths (locally uploaded images, served from public/)
+ * - /uploads/... paths (locally uploaded images served from public/)
+ * - local image filenames (e.g. "photo.jpg") used in bulk upload Excel —
+ *   these are matched to user-uploaded files and pushed to ML CDN before publishing
  */
 function isValidImageRef(value: string): boolean {
   const v = value.trim();
   if (v.startsWith('/uploads/')) return true;
+  if (/\.(jpe?g|png|webp|gif)$/i.test(v) && !v.includes('/')) return true; // local filename
   try {
     const url = new URL(v);
     return url.protocol === 'http:' || url.protocol === 'https:';

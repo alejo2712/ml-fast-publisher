@@ -12,7 +12,7 @@
  */
 
 import type { MLPayload, ApplianceType } from '@/types';
-import { resolveCategory, validateCategoryId, type MLCategoryResolution } from './category-resolver';
+import { resolveCategory, validateCategoryId, validatePathForApplianceType, APPLIANCE_PATH_KEYWORDS, type MLCategoryResolution } from './category-resolver';
 import { getCategoryAttributes, getAttributeIds, getMissingCriticalAttributes } from './category-attributes';
 import { buildDefaultAttribute } from './attribute-defaults';
 import { logger } from '@/lib/logger';
@@ -90,6 +90,44 @@ export async function enrichPayload(
           `Categoría "${resolution.categoryName}" solo acepta clasificados. Se intentará de todas formas.`
         );
       }
+    }
+  }
+
+  // ── Hard path validation — BLOCKING ──────────────────────────────────────────
+  // Second line of defense: even if resolveCategory returned something (via fallback or
+  // user-provided ID), verify its path actually matches the expected product type.
+  // This prevents publishing a microwave in "Mesas Ratonas" if the category resolver
+  // had an API failure and we somehow still got a resolution back.
+  if (resolution && applianceType) {
+    const pathValid = validatePathForApplianceType(resolution.pathFromRoot, applianceType);
+    if (!pathValid) {
+      const keywords = APPLIANCE_PATH_KEYWORDS[applianceType] ?? [];
+      const expectedKwds = keywords.length > 0 ? `"${keywords.join('", "')}"` : '(sin palabras clave definidas)';
+      const pathError =
+        `Categoría incorrecta: se resolvió "${resolution.categoryName}" ` +
+        `(${resolution.pathString}) pero el producto es "${applianceType}". ` +
+        `El camino de categoría no contiene las palabras clave esperadas: ${expectedKwds}. ` +
+        `Especificá la categoría exacta en la columna "categoria_ml".`;
+
+      logger.warn('publish', 'Blocking publish: category path does not match product type', {
+        applianceType,
+        resolvedCategory: resolution.categoryName,
+        resolvedPath: resolution.pathString,
+        expectedKeywords: keywords,
+        usedFallback: resolution.usedFallback,
+        officialCategoryId: officialCategoryId ?? '(auto-resolved)',
+      });
+
+      return {
+        payload: { ...payload, category_id: resolution.categoryId },
+        resolution,
+        warnings,
+        missingRequired: [],
+        hasBlockingMissing: false,
+        usedFallback: resolution.usedFallback,
+        categoryPath: resolution.pathString,
+        categoryError: pathError,
+      };
     }
   }
 

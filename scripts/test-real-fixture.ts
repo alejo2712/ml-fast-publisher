@@ -108,14 +108,16 @@ async function main() {
   assert(widthAttrMicrowave?.value_name === '52 cm',  'Microwave payload WIDTH = 52 cm',  `got "${widthAttrMicrowave?.value_name}"`);
   assert(depthAttrMicrowave?.value_name === '40 cm',  'Microwave payload DEPTH = 40 cm',  `got "${depthAttrMicrowave?.value_name}"`);
 
-  // ── 6. No local images ────────────────────────────────────────────────────
+  // ── 6. Images — local PNG filenames (uploaded to ML CDN before publish) ──
   console.log('\n── Images ───────────────────────────────────────────────────────────');
   const allImages = result.rows.flatMap((r) => r.draft?.images ?? []);
   assert(allImages.length >= 4, `At least 4 images total (2 per row)`, `got ${allImages.length}`);
-  const localImages = allImages.filter((img) => img.startsWith('/'));
-  assert(localImages.length === 0, 'No local images (all must be HTTPS for real ML publish)', `local: ${localImages.join(', ')}`);
-  const httpsImages = allImages.filter((img) => img.startsWith('https://'));
-  assert(httpsImages.length === allImages.length, `All ${allImages.length} images are HTTPS`);
+  const localRefs = result.rows.flatMap((r) => r.localImageRefs);
+  assert(localRefs.length >= 4, `≥ 4 local image filenames (uploaded to ML CDN before publish)`, `got ${localRefs.length}`);
+  const IMAGES_DIR_A = path.resolve(__dirname, '../tests/fixtures/images');
+  for (const ref of localRefs) {
+    assert(fs.existsSync(path.join(IMAGES_DIR_A, ref)), `Local image file present: ${ref}`);
+  }
 
   // ── 7. Payload structure ──────────────────────────────────────────────────
   console.log('\n── Payload structure ────────────────────────────────────────────────');
