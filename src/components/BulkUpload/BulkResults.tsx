@@ -673,6 +673,19 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
   const publishableRows = rows.filter((r) => r.status !== 'error' && r.payload !== null);
   const exportableCount = rows.filter((r) => r.payload !== null).length;
 
+  // Detect if any publishable row needs local image files that haven't been uploaded yet
+  const missingImageFiles = !mlDryRun ? (() => {
+    const missing: string[] = [];
+    publishableRows.forEach((r) => {
+      r.localImageRefs.forEach((ref) => {
+        if (!imageFiles?.has(ref.toLowerCase()) && !mlImageUrls.has(ref.toLowerCase())) {
+          if (!missing.includes(ref)) missing.push(ref);
+        }
+      });
+    });
+    return missing;
+  })() : [];
+
   async function handleBulkPublish() {
     setShowBulkConfirm(false);
     setRealConfirmed(false);
@@ -1034,6 +1047,26 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
               </div>
             )}
 
+            {/* Missing image files — hard block */}
+            {missingImageFiles.length > 0 && (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-2">
+                <div className="flex items-start gap-2">
+                  <XCircle size={16} className="text-red-500 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-semibold text-red-800">Imágenes locales no encontradas</p>
+                    <p className="text-xs text-red-700 mt-1">
+                      El Excel referencia archivos de imagen locales que no fueron subidos. Arrastrá los archivos de imagen junto con el Excel para continuar.
+                    </p>
+                  </div>
+                </div>
+                <div className="space-y-1 pl-6">
+                  {missingImageFiles.map((f) => (
+                    <p key={f} className="text-xs font-mono text-red-700 bg-red-100 rounded px-2 py-0.5">{f}</p>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Summary */}
             <div className="bg-gray-50 rounded-xl p-4 space-y-2 text-sm">
               <div className="flex justify-between items-center">
@@ -1091,7 +1124,7 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
               </button>
               <button
                 onClick={handleBulkPublish}
-                disabled={!mlDryRun && !realConfirmed}
+                disabled={(!mlDryRun && !realConfirmed) || missingImageFiles.length > 0}
                 className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {mlDryRun

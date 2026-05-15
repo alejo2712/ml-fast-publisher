@@ -158,6 +158,49 @@ export async function enrichPayload(
     };
   }
 
+  // ── Fallback category leaf check — BLOCKING ───────────────────────────────
+  // When resolveCategory returned null (API failure, wrong domain, no fallback), we fall
+  // back to the hardcoded payload.category_id. But hardcoded IDs like MLA1577/MLA4749 are
+  // often non-leaf. We must validate them before sending to ML.
+  if (!resolution) {
+    const fallbackValidation = await validateCategoryId(payload.category_id, accessToken);
+    if (!fallbackValidation) {
+      const err = `La categoría "${payload.category_id}" no existe en Mercado Libre. Especificá la categoría correcta en la columna "categoria_ml".`;
+      logger.warn('publish', 'Blocking publish: hardcoded category_id does not exist in ML', { categoryId: payload.category_id });
+      return {
+        payload,
+        resolution: null,
+        warnings,
+        missingRequired: [],
+        hasBlockingMissing: true,
+        usedFallback: false,
+        categoryPath: payload.category_id,
+        categoryError: err,
+      };
+    }
+    if (!fallbackValidation.isLeaf) {
+      const err = `La categoría "${payload.category_id}" (${fallbackValidation.categoryName}) no es una categoría hoja. ML finalizará el anuncio inmediatamente. Especificá la subcategoría exacta en "categoria_ml". Ruta: ${fallbackValidation.pathString}`;
+      logger.warn('publish', 'Blocking publish: hardcoded category_id is not a leaf', {
+        categoryId: payload.category_id,
+        categoryName: fallbackValidation.categoryName,
+        pathString: fallbackValidation.pathString,
+      });
+      return {
+        payload,
+        resolution: fallbackValidation,
+        warnings,
+        missingRequired: [],
+        hasBlockingMissing: true,
+        usedFallback: false,
+        categoryPath: fallbackValidation.pathString,
+        categoryError: err,
+      };
+    }
+    // Fallback category is valid leaf — use it, with a warning
+    warnings.push(`Categoría resuelta por fallback: ${fallbackValidation.categoryName} (${fallbackValidation.categoryId}). Para mayor precisión, especificá "categoria_ml".`);
+    // resolution remains null but we know categoryId is valid — continue with payload.category_id
+  }
+
   const resolvedCategoryId = resolution?.categoryId ?? payload.category_id;
   let enrichedPayload: MLPayload = { ...payload, category_id: resolvedCategoryId };
 
