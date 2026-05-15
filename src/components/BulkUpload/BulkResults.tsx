@@ -921,20 +921,21 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
               Exportar JSON
             </button>
           )}
-          {publishableRows.length > 0 && (
-            <button
-              onClick={() => setShowBulkConfirm(true)}
-              disabled={isBulkPublishing}
-              className="flex items-center gap-1.5 text-sm font-semibold px-4 py-1.5 rounded-lg transition-all bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isBulkPublishing
-                ? <><Loader2 size={14} className="animate-spin" /> Publicando...</>
-                : mlDryRun
-                ? <><FlaskConical size={14} /> Simular {publishableRows.length} — modo prueba</>
-                : <><Send size={14} /> Publicar {publishableRows.length} en Mercado Libre</>
-              }
-            </button>
-          )}
+          <button
+            onClick={() => publishableRows.length > 0 && setShowBulkConfirm(true)}
+            disabled={isBulkPublishing || publishableRows.length === 0}
+            title={publishableRows.length === 0 ? 'Corregí los errores en las filas antes de publicar' : undefined}
+            className="flex items-center gap-1.5 text-sm font-semibold px-4 py-1.5 rounded-lg transition-all bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {isBulkPublishing
+              ? <><Loader2 size={14} className="animate-spin" /> Publicando...</>
+              : publishableRows.length === 0
+              ? <><Send size={14} /> Sin productos válidos para publicar</>
+              : mlDryRun
+              ? <><FlaskConical size={14} /> Simular {publishableRows.length} — modo prueba</>
+              : <><Send size={14} /> Publicar {publishableRows.length} en Mercado Libre</>
+            }
+          </button>
         </div>
       </div>
 
