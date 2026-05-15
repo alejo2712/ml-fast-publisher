@@ -6,8 +6,9 @@ import type { MLBulkPublishResult, MLPublishResult } from '@/lib/mercadolibre/ty
 import type { ProductDraft } from '@/types';
 import {
   CheckCircle2, AlertTriangle, XCircle, Download, ChevronDown, ChevronRight,
-  Send, FlaskConical, Loader2, Clock, Pencil, X, Check, ShieldOff, ExternalLink, Hash, SkipForward,
+  Send, FlaskConical, Loader2, Clock, Pencil, X, Check, ShieldOff, ExternalLink, Hash, SkipForward, Eye,
 } from 'lucide-react';
+import type { PrepareItemResult } from '@/app/api/ml/prepare-publish/route';
 import { useState, useEffect, useCallback, useRef, memo } from 'react';
 import { cn } from '@/components/ui';
 import { JsonPreview } from '@/components/JsonPreview';
@@ -346,9 +347,11 @@ interface RowDetailProps {
   imageUploadErrors?: Map<string, string>;
   /** Local image files the user dragged in — keyed by filename (lowercase). Used to show match status. */
   imageFiles?: Map<string, File>;
+  /** Result from /api/ml/prepare-publish — shows the actual final payload diff before publishing */
+  prepareResult?: PrepareItemResult;
 }
 
-function RowDetail({ row, publishState, mlImageUrls, imageUploadErrors, imageFiles }: RowDetailProps) {
+function RowDetail({ row, publishState, mlImageUrls, imageUploadErrors, imageFiles, prepareResult }: RowDetailProps) {
   const [showPayload, setShowPayload] = useState(false);
   const [showRawResponse, setShowRawResponse] = useState(false);
 
@@ -426,12 +429,117 @@ function RowDetail({ row, publishState, mlImageUrls, imageUploadErrors, imageFil
         </div>
       )}
 
-      {/* Pre-publish info panel: category, GTIN, required attrs (shown before and after publish) */}
-      {row.draft && !publishState?.resolvedCategoryPath && (
+      {/* Prepare diff panel — shown after "Preparar publicación" is clicked */}
+      {prepareResult && !publishState?.resolvedCategoryPath && (
+        <div className="space-y-2.5">
+          {/* Blocking errors */}
+          {prepareResult.blockingErrors.length > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2.5 space-y-1.5">
+              <p className="text-[11px] font-semibold text-red-700 uppercase tracking-wide flex items-center gap-1">
+                <XCircle size={11} /> Bloqueado — no se puede publicar
+              </p>
+              {prepareResult.blockingErrors.map((e, i) => (
+                <p key={i} className="text-xs text-red-700 leading-relaxed">{e}</p>
+              ))}
+            </div>
+          )}
+
+          {/* Warnings */}
+          {prepareResult.warnings.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 space-y-1">
+              {prepareResult.warnings.map((w, i) => (
+                <p key={i} className="text-xs text-amber-700">{w}</p>
+              ))}
+            </div>
+          )}
+
+          {/* Category diff */}
+          <div className={cn(
+            'rounded-lg px-3 py-2.5 space-y-1',
+            prepareResult.categoryBefore !== prepareResult.categoryAfter
+              ? 'bg-blue-50 border border-blue-100'
+              : 'bg-gray-50 border border-gray-100'
+          )}>
+            <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Categoría ML</p>
+            <div className="text-xs space-y-0.5">
+              {prepareResult.categoryBefore !== prepareResult.categoryAfter && (
+                <p>
+                  <span className="text-gray-400">Antes:</span>{' '}
+                  <span className="font-mono text-amber-700 line-through">{prepareResult.categoryBefore}</span>
+                </p>
+              )}
+              <p>
+                <span className="text-gray-400">Final:</span>{' '}
+                <span className="font-mono text-blue-800 font-semibold">{prepareResult.categoryAfter}</span>
+              </p>
+              {prepareResult.categoryPath && (
+                <p className="text-gray-600 text-[11px]">{prepareResult.categoryPath}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Images after */}
+          {prepareResult.imagesAfter.length > 0 && (
+            <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2.5 space-y-1.5">
+              <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Imágenes finales</p>
+              {prepareResult.imagesAfter.map((url, i) => (
+                <div key={i} className="flex items-center gap-2 text-xs">
+                  <span className={cn(
+                    'w-2 h-2 rounded-full shrink-0',
+                    url.startsWith('https://') ? 'bg-emerald-400' : 'bg-red-400'
+                  )} />
+                  <span className="font-mono truncate text-gray-600 flex-1">{url}</span>
+                  {url.startsWith('https://') && (
+                    <a href={url} target="_blank" rel="noreferrer" className="text-blue-500 shrink-0"><ExternalLink size={10} /></a>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Attribute diff */}
+          {(prepareResult.removedAttributes.length > 0 || prepareResult.addedAttributes.length > 0) && (
+            <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2.5 space-y-1.5">
+              <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Atributos filtrados</p>
+              {prepareResult.removedAttributes.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  <span className="text-[10px] text-gray-400 uppercase">Eliminados:</span>
+                  {prepareResult.removedAttributes.map((id) => (
+                    <span key={id} className="font-mono text-[11px] bg-red-100 text-red-700 rounded px-1.5 py-0.5 line-through">{id}</span>
+                  ))}
+                </div>
+              )}
+              {prepareResult.addedAttributes.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  <span className="text-[10px] text-gray-400 uppercase">Agregados:</span>
+                  {prepareResult.addedAttributes.map((id) => (
+                    <span key={id} className="font-mono text-[11px] bg-emerald-100 text-emerald-700 rounded px-1.5 py-0.5">{id}</span>
+                  ))}
+                </div>
+              )}
+              <div className="flex flex-wrap gap-1 mt-1">
+                <span className="text-[10px] text-gray-400 uppercase">Finales:</span>
+                {prepareResult.attributesAfter.map((id) => (
+                  <span key={id} className="font-mono text-[11px] bg-gray-200 text-gray-700 rounded px-1.5 py-0.5">{id}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Ready badge */}
+          {prepareResult.ready && (
+            <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 text-xs text-emerald-700 font-medium">
+              <CheckCircle2 size={12} /> Listo para publicar — payload final verificado
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Pre-publish info panel — shown before preparation and after publish */}
+      {row.draft && !prepareResult && !publishState?.resolvedCategoryPath && (
         <div className="space-y-1.5 rounded-lg bg-gray-50 border border-gray-100 px-3 py-2.5">
           <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Al publicar — el servidor hará estos cambios</p>
           <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs">
-            {/* Category: will be resolved server-side */}
             <span className="col-span-2">
               <span className="text-gray-400">Categoría:</span>{' '}
               {row.draft.officialCategoryId ? (
@@ -442,12 +550,10 @@ function RowDetail({ row, publishState, mlImageUrls, imageUploadErrors, imageFil
                 </span>
               )}
             </span>
-            {/* GTIN */}
             <span className={row.draft.gtin ? 'text-gray-700' : 'text-amber-600'}>
               <span className="text-gray-400">GTIN:</span>{' '}
               {row.draft.gtin ?? <span className="italic">— faltante</span>}
             </span>
-            {/* Dimensions */}
             <span className={row.draft.height ? 'text-gray-700' : 'text-gray-400'}>
               <span className="text-gray-400">Alto:</span>{' '}
               {row.draft.height != null ? `${row.draft.height} cm` : <span className="italic">—</span>}
@@ -460,7 +566,6 @@ function RowDetail({ row, publishState, mlImageUrls, imageUploadErrors, imageFil
               <span className="text-gray-400">Prof.:</span>{' '}
               {row.draft.depth != null ? `${row.draft.depth} cm` : <span className="italic">—</span>}
             </span>
-            {/* Images: show matching status */}
             <span className="col-span-2">
               <span className="text-gray-400">Imágenes:</span>{' '}
               {row.localImageRefs.length > 0 ? (
@@ -477,7 +582,6 @@ function RowDetail({ row, publishState, mlImageUrls, imageUploadErrors, imageFil
               )}
             </span>
           </div>
-          {/* Attribute enrichment note */}
           <div className="border-t border-gray-200 pt-1.5 mt-1">
             <p className="text-[11px] text-gray-500">
               Los atributos genéricos (CAPACITY, COOLING_TYPE) serán filtrados y reemplazados por los que la categoría resuelta soporte.
@@ -676,6 +780,10 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
   // ML CDN URLs resolved during pre-publish image upload — keyed by original filename (lowercase)
   const [mlImageUrls, setMlImageUrls] = useState<Map<string, string>>(new Map());
   const [imageUploadErrors, setImageUploadErrors] = useState<Map<string, string>>(new Map());
+  // Prepare-publish state — stores per-row enrichment diff from /api/ml/prepare-publish
+  const [prepareResults, setPrepareResults] = useState<Map<number, PrepareItemResult>>(new Map());
+  const [isPreparing, setIsPreparing] = useState(false);
+  const [prepareError, setPrepareError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch('/api/ml/status')
@@ -790,32 +898,63 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
       setImageUploadErrors(currentImageErrors);
     }
 
-    // Mark remaining publishable rows as "publishing"
-    setPublishStates((prev) => {
-      const next = new Map(prev);
-      publishableRows.forEach((r) => next.set(r.rowIndex, { status: 'publishing', message: 'Publicando...' }));
-      return next;
-    });
+    // If prepare was run: skip rows with blocking errors and use prepared payloads for ready rows
+    if (prepareResults.size > 0) {
+      const preSkippedStates = new Map<number, RowPublishState>();
+      publishableRows.forEach((r) => {
+        const pr = prepareResults.get(r.rowIndex);
+        if (pr && !pr.ready) {
+          preSkippedStates.set(r.rowIndex, {
+            status: 'skipped_invalid',
+            message: pr.blockingErrors.join('; ') || 'Bloqueado en preparación',
+          });
+        } else {
+          preSkippedStates.set(r.rowIndex, { status: 'publishing', message: 'Publicando...' });
+        }
+      });
+      setPublishStates(preSkippedStates);
+    } else {
+      // Mark remaining publishable rows as "publishing"
+      setPublishStates((prev) => {
+        const next = new Map(prev);
+        publishableRows.forEach((r) => next.set(r.rowIndex, { status: 'publishing', message: 'Publicando...' }));
+        return next;
+      });
+    }
 
     try {
-      // Build items — replace local image filenames with ML CDN URLs in payload
-      const items = publishableRows.map((r) => {
-        let payload = r.payload!;
+      // Build items — use prepared finalPayload when available, else substitute CDN URLs
+      const itemsRaw = publishableRows.map((r) => {
+        const prepResult = prepareResults.get(r.rowIndex);
 
-        // Substitute local image filenames with ML CDN URLs
+        // Skip rows blocked in prepare
+        if (prepResult && !prepResult.ready) return null;
+
+        // Use enriched final payload from prepare — skip server-side enrichment
+        if (prepResult?.ready) {
+          return {
+            payload: prepResult.finalPayload,
+            rowIndex: r.rowIndex,
+            officialCategoryId: r.draft?.officialCategoryId,
+            applianceType: r.draft?.applianceType,
+            alreadyEnriched: true,
+          };
+        }
+
+        // Fallback: substitute local image filenames with ML CDN URLs
+        let payload = r.payload!;
         if (r.localImageRefs.length > 0 && payload.pictures) {
           const updatedPictures = payload.pictures.map((pic) => {
             const key = pic.source.toLowerCase();
             const isLocal = !pic.source.startsWith('http');
             if (isLocal) {
               const mlUrl = currentMlImageUrls.get(key);
-              return mlUrl ? { source: mlUrl } : pic; // keep original if not found (will fail at server)
+              return mlUrl ? { source: mlUrl } : pic;
             }
             return pic;
           });
           payload = { ...payload, pictures: updatedPictures };
         }
-
         return {
           payload,
           rowIndex: r.rowIndex,
@@ -823,6 +962,7 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
           applianceType: r.draft?.applianceType,
         };
       });
+      const items = itemsRaw.filter(Boolean);
       const res = await fetch('/api/ml/publish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -907,6 +1047,93 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
     }
   }
 
+  async function handlePrepare() {
+    setPrepareError(null);
+    setIsPreparing(true);
+    setPrepareResults(new Map());
+
+    // ── Step 1: Upload local image files to ML CDN ────────────────────────────
+    const localFilesToUpload = new Set<string>();
+    publishableRows.forEach((r) => r.localImageRefs.forEach((ref) => localFilesToUpload.add(ref)));
+
+    const currentMlImageUrls = new Map(mlImageUrls);
+
+    if (localFilesToUpload.size > 0 && imageFiles && imageFiles.size > 0 && !mlDryRun) {
+      const formData = new FormData();
+      let hasFiles = false;
+      for (const filename of localFilesToUpload) {
+        if (currentMlImageUrls.has(filename.toLowerCase())) continue;
+        const file = imageFiles.get(filename.toLowerCase());
+        if (file) { formData.append('files', file, file.name); hasFiles = true; }
+      }
+      if (hasFiles) {
+        try {
+          const uploadRes = await fetch('/api/ml/upload-pictures', { method: 'POST', body: formData });
+          const uploadData = await uploadRes.json() as {
+            uploads: Array<{ filename: string; secureUrl: string }>;
+            errors: Array<{ filename: string; error: string }>;
+          };
+          uploadData.uploads.forEach(({ filename, secureUrl }) => {
+            currentMlImageUrls.set(filename.toLowerCase(), secureUrl);
+          });
+          setMlImageUrls(new Map(currentMlImageUrls));
+        } catch (err) {
+          setPrepareError(`Error subiendo imágenes: ${err instanceof Error ? err.message : 'Error de red'}`);
+          setIsPreparing(false);
+          return;
+        }
+      }
+    }
+
+    // ── Step 2: Build items with CDN URLs substituted ─────────────────────────
+    const items = publishableRows.map((r) => {
+      let payload = r.payload!;
+      if (r.localImageRefs.length > 0 && payload.pictures) {
+        const updatedPictures = payload.pictures.map((pic) => {
+          if (!pic.source.startsWith('http')) {
+            const mlUrl = currentMlImageUrls.get(pic.source.toLowerCase());
+            return mlUrl ? { source: mlUrl } : pic;
+          }
+          return pic;
+        });
+        payload = { ...payload, pictures: updatedPictures };
+      }
+      return {
+        payload,
+        rowIndex: r.rowIndex,
+        officialCategoryId: r.draft?.officialCategoryId,
+        applianceType: r.draft?.applianceType,
+      };
+    });
+
+    // ── Step 3: Call prepare-publish ──────────────────────────────────────────
+    try {
+      const res = await fetch('/api/ml/prepare-publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        setPrepareError(err.error ?? `Error del servidor (${res.status})`);
+        setIsPreparing(false);
+        return;
+      }
+      const data = await res.json() as { results: PrepareItemResult[] };
+      const newResults = new Map<number, PrepareItemResult>();
+      data.results.forEach((result) => {
+        if (result.rowIndex !== undefined) newResults.set(result.rowIndex, result);
+      });
+      setPrepareResults(newResults);
+      // Auto-expand all rows so the user sees the diff
+      setExpandedRows(new Set(publishableRows.map((r) => r.rowIndex)));
+    } catch (err) {
+      setPrepareError(err instanceof Error ? err.message : 'Error de red');
+    } finally {
+      setIsPreparing(false);
+    }
+  }
+
   const publishedCount = Array.from(publishStates.values()).filter((s) => s.status === 'published').length;
   const dryRunCount = Array.from(publishStates.values()).filter((s) => s.status === 'dry_run').length;
   const failedCount = Array.from(publishStates.values()).filter((s) => s.status === 'failed').length;
@@ -917,6 +1144,14 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
 
   return (
     <div className="space-y-4">
+
+      {/* Prepare error banner */}
+      {prepareError && (
+        <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-800">
+          <XCircle size={15} className="shrink-0 mt-0.5 text-red-500" />
+          <p><span className="font-semibold">Error al preparar:</span> {prepareError}</p>
+        </div>
+      )}
 
       {/* Modo prueba banner — only shown in dev/test mode */}
       {mlDryRun && (
@@ -953,7 +1188,7 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
         <div className="ml-auto flex gap-2 flex-wrap">
           <button
             onClick={onReset}
-            disabled={isBulkPublishing}
+            disabled={isBulkPublishing || isPreparing}
             className="text-sm text-gray-500 hover:text-gray-700 px-3 py-1.5 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors disabled:opacity-50"
           >
             Nueva carga
@@ -961,16 +1196,36 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
           {exportableCount > 0 && (
             <button
               onClick={() => exportAllPayloads(rows)}
-              disabled={isBulkPublishing}
+              disabled={isBulkPublishing || isPreparing}
               className="flex items-center gap-1.5 text-sm bg-gray-700 hover:bg-gray-800 text-white px-3 py-1.5 rounded-lg font-medium transition-colors disabled:opacity-50"
             >
               <Download size={14} />
               Exportar JSON
             </button>
           )}
+          {publishableRows.length > 0 && !mlDryRun && (
+            <button
+              onClick={handlePrepare}
+              disabled={isPreparing || isBulkPublishing}
+              title="Ejecuta la pipeline completa (sin publicar) y muestra el payload final que se enviará a ML"
+              className={cn(
+                'flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg transition-all border disabled:opacity-50',
+                prepareResults.size > 0
+                  ? 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'
+                  : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
+              )}
+            >
+              {isPreparing
+                ? <><Loader2 size={14} className="animate-spin" /> Preparando...</>
+                : prepareResults.size > 0
+                ? <><CheckCircle2 size={14} /> Preparado</>
+                : <><Eye size={14} /> Preparar publicación</>
+              }
+            </button>
+          )}
           <button
             onClick={() => publishableRows.length > 0 && setShowBulkConfirm(true)}
-            disabled={isBulkPublishing || publishableRows.length === 0}
+            disabled={isBulkPublishing || isPreparing || publishableRows.length === 0}
             title={publishableRows.length === 0 ? 'Corregí los errores en las filas antes de publicar' : undefined}
             className="flex items-center gap-1.5 text-sm font-semibold px-4 py-1.5 rounded-lg transition-all bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-40 disabled:cursor-not-allowed"
           >
@@ -980,6 +1235,8 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
               ? <><Send size={14} /> Sin productos válidos para publicar</>
               : mlDryRun
               ? <><FlaskConical size={14} /> Simular {publishableRows.length} — modo prueba</>
+              : prepareResults.size > 0
+              ? <><Send size={14} /> Publicar {publishableRows.filter((r) => prepareResults.get(r.rowIndex)?.ready !== false).length} payloads preparados</>
               : <><Send size={14} /> Publicar {publishableRows.length} en Mercado Libre</>
             }
           </button>
@@ -1258,6 +1515,7 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
                   mlImageUrls={mlImageUrls}
                   imageUploadErrors={imageUploadErrors}
                   imageFiles={imageFiles}
+                  prepareResult={prepareResults.get(row.rowIndex)}
                 />
               )}
             </div>

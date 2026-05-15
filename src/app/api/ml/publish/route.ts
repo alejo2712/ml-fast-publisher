@@ -32,6 +32,8 @@ interface PublishRequestItem {
   officialCategoryId?: string;
   /** Product type — used to validate resolved category path and prevent wrong-domain results */
   applianceType?: ApplianceType;
+  /** When true, payload was already enriched by /api/ml/prepare-publish — skip enrichPayload */
+  alreadyEnriched?: boolean;
 }
 
 export async function POST(request: NextRequest) {
@@ -221,11 +223,14 @@ export async function POST(request: NextRequest) {
     }
 
     // 4. Enrich payload — resolve dynamic ML category + filter/fill attributes (real mode only)
+    // Skip when alreadyEnriched=true: payload was already processed by /api/ml/prepare-publish
     let missingAttrs: MissingAttr[] = [];
     let resolvedCategoryId: string | undefined;
     let resolvedCategoryPath: string | undefined;
     let usedFallbackCategory = false;
-    if (!dryRun) {
+    if (item.alreadyEnriched) {
+      resolvedCategoryId = item.payload.category_id;
+    } else if (!dryRun) {
       const enriched = await enrichPayload(
         item.payload,
         item.payload.title,
