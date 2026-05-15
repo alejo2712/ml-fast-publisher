@@ -10,6 +10,7 @@
     "test:bulk": "npx tsx scripts/test-bulk-parser.ts",
     "test:real-fixture": "npx tsx scripts/test-real-fixture.ts",
     "test:real-publish-pipeline": "npx tsx scripts/test-real-publish-pipeline.ts",
+    "test:final-payload": "npx tsx scripts/test-final-payload.ts",
     "gen:fixture": "npx tsx scripts/generate-real-publish-test.ts",
     "gen:images": "npx tsx scripts/generate-test-images.ts",
     "postinstall": "prisma generate"

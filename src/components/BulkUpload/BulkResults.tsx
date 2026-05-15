@@ -344,9 +344,11 @@ interface RowDetailProps {
   publishState?: RowPublishState;
   mlImageUrls?: Map<string, string>;
   imageUploadErrors?: Map<string, string>;
+  /** Local image files the user dragged in — keyed by filename (lowercase). Used to show match status. */
+  imageFiles?: Map<string, File>;
 }
 
-function RowDetail({ row, publishState, mlImageUrls, imageUploadErrors }: RowDetailProps) {
+function RowDetail({ row, publishState, mlImageUrls, imageUploadErrors, imageFiles }: RowDetailProps) {
   const [showPayload, setShowPayload] = useState(false);
   const [showRawResponse, setShowRawResponse] = useState(false);
 
@@ -393,12 +395,14 @@ function RowDetail({ row, publishState, mlImageUrls, imageUploadErrors }: RowDet
           {row.localImageRefs.map((ref) => {
             const mlUrl = mlImageUrls?.get(ref.toLowerCase());
             const uploadError = imageUploadErrors?.get(ref);
+            const isMatched = imageFiles?.has(ref.toLowerCase());
             return (
               <div key={ref} className={cn(
                 'flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs',
                 mlUrl ? 'bg-emerald-50 border border-emerald-200 text-emerald-800' :
                 uploadError ? 'bg-red-50 border border-red-200 text-red-700' :
-                'bg-gray-50 border border-gray-200 text-gray-600'
+                isMatched ? 'bg-indigo-50 border border-indigo-200 text-indigo-800' :
+                'bg-red-50 border border-red-200 text-red-700'
               )}>
                 <span className="font-mono flex-1 truncate">{ref}</span>
                 {mlUrl ? (
@@ -407,8 +411,14 @@ function RowDetail({ row, publishState, mlImageUrls, imageUploadErrors }: RowDet
                   </a>
                 ) : uploadError ? (
                   <span className="text-red-600 font-medium shrink-0">{uploadError}</span>
+                ) : isMatched ? (
+                  <span className="text-indigo-600 font-medium shrink-0 flex items-center gap-1">
+                    <CheckCircle2 size={10} />Lista para subir
+                  </span>
                 ) : (
-                  <span className="text-gray-400 shrink-0 italic">Pendiente de subir</span>
+                  <span className="text-red-600 font-medium shrink-0 flex items-center gap-1">
+                    <XCircle size={10} />Arrastrá el archivo
+                  </span>
                 )}
               </div>
             );
@@ -418,17 +428,26 @@ function RowDetail({ row, publishState, mlImageUrls, imageUploadErrors }: RowDet
 
       {/* Pre-publish info panel: category, GTIN, required attrs (shown before and after publish) */}
       {row.draft && !publishState?.resolvedCategoryPath && (
-        <div className="space-y-1 rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
-          <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Antes de publicar</p>
+        <div className="space-y-1.5 rounded-lg bg-gray-50 border border-gray-100 px-3 py-2.5">
+          <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Al publicar — el servidor hará estos cambios</p>
           <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs">
+            {/* Category: will be resolved server-side */}
+            <span className="col-span-2">
+              <span className="text-gray-400">Categoría:</span>{' '}
+              {row.draft.officialCategoryId ? (
+                <span className="text-emerald-700 font-mono">{row.draft.officialCategoryId}</span>
+              ) : (
+                <span className="text-amber-600 italic">
+                  {row.payload?.category_id}{' '}→ se resolverá dinámicamente por ML
+                </span>
+              )}
+            </span>
+            {/* GTIN */}
             <span className={row.draft.gtin ? 'text-gray-700' : 'text-amber-600'}>
               <span className="text-gray-400">GTIN:</span>{' '}
               {row.draft.gtin ?? <span className="italic">— faltante</span>}
             </span>
-            <span className={row.draft.officialCategoryId ? 'text-gray-700' : 'text-amber-600'}>
-              <span className="text-gray-400">categoria_ml:</span>{' '}
-              {row.draft.officialCategoryId ?? <span className="italic">— auto-resolución</span>}
-            </span>
+            {/* Dimensions */}
             <span className={row.draft.height ? 'text-gray-700' : 'text-gray-400'}>
               <span className="text-gray-400">Alto:</span>{' '}
               {row.draft.height != null ? `${row.draft.height} cm` : <span className="italic">—</span>}
@@ -441,21 +460,29 @@ function RowDetail({ row, publishState, mlImageUrls, imageUploadErrors }: RowDet
               <span className="text-gray-400">Prof.:</span>{' '}
               {row.draft.depth != null ? `${row.draft.depth} cm` : <span className="italic">—</span>}
             </span>
-            <span className="text-gray-600">
+            {/* Images: show matching status */}
+            <span className="col-span-2">
               <span className="text-gray-400">Imágenes:</span>{' '}
-              {(row.draft.images ?? []).length > 0 ? (
-                `${(row.draft.images ?? []).length} imagen${(row.draft.images ?? []).length !== 1 ? 'es' : ''}`
-              ) : <span className="text-red-500 italic">— sin imágenes</span>}
-              {row.localImageRefs.length > 0 && (
-                <span className="ml-1 text-indigo-600">({row.localImageRefs.length} local{row.localImageRefs.length !== 1 ? 'es' : ''})</span>
+              {row.localImageRefs.length > 0 ? (
+                <>
+                  {row.localImageRefs.filter((r) => imageFiles?.has(r.toLowerCase())).length}/{row.localImageRefs.length} listas para subir a ML CDN
+                  {row.localImageRefs.some((r) => !imageFiles?.has(r.toLowerCase())) && (
+                    <span className="ml-1 text-red-500">— arrastrá los archivos faltantes</span>
+                  )}
+                </>
+              ) : (row.draft.images ?? []).length > 0 ? (
+                <span className="text-emerald-700">{(row.draft.images ?? []).length} URL{(row.draft.images ?? []).length !== 1 ? 's' : ''} HTTPS ✓</span>
+              ) : (
+                <span className="text-red-500 italic">— sin imágenes</span>
               )}
             </span>
           </div>
-          {!row.draft.officialCategoryId && (
-            <p className="text-[11px] text-amber-600 mt-1">
-              Sin categoria_ml: el sistema predecirá la categoría automáticamente. Para mayor precisión, especificala.
+          {/* Attribute enrichment note */}
+          <div className="border-t border-gray-200 pt-1.5 mt-1">
+            <p className="text-[11px] text-gray-500">
+              Los atributos genéricos (CAPACITY, COOLING_TYPE) serán filtrados y reemplazados por los que la categoría resuelta soporte.
             </p>
-          )}
+          </div>
         </div>
       )}
 
@@ -566,7 +593,7 @@ function RowDetail({ row, publishState, mlImageUrls, imageUploadErrors }: RowDet
 
       {/* Expandable sections */}
       <div className="space-y-1.5">
-        {/* Payload JSON */}
+        {/* Payload JSON — pre-enrichment (initial state before server processes it) */}
         {row.payload && (
           <div>
             <button
@@ -574,9 +601,16 @@ function RowDetail({ row, publishState, mlImageUrls, imageUploadErrors }: RowDet
               className="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1"
             >
               {showPayload ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-              {showPayload ? 'Ocultar payload' : 'Ver payload JSON (ML)'}
+              {showPayload ? 'Ocultar payload inicial' : 'Ver payload inicial (pre-publicación)'}
             </button>
-            {showPayload && <div className="mt-2"><JsonPreview payload={row.payload} /></div>}
+            {showPayload && (
+              <div className="mt-2 space-y-1.5">
+                <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 leading-relaxed">
+                  Este payload es el estado <strong>inicial</strong> — antes de que el servidor lo procese. Al publicar, el servidor resolverá la categoría ML real, filtrará los atributos no soportados, y reemplazará las imágenes locales por URLs de ML CDN.
+                </p>
+                <JsonPreview payload={row.payload} />
+              </div>
+            )}
           </div>
         )}
 
@@ -1223,6 +1257,7 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
                   publishState={pubState}
                   mlImageUrls={mlImageUrls}
                   imageUploadErrors={imageUploadErrors}
+                  imageFiles={imageFiles}
                 />
               )}
             </div>
