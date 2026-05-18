@@ -67,8 +67,25 @@ export function BulkUpload() {
       setFileName(file.name);
       try {
         const buffer = await file.arrayBuffer();
-        const csvText = await parseXlsxBuffer(buffer);
-        await processText(csvText, file.name);
+        const { csv, embeddedImages } = await parseXlsxBuffer(buffer);
+
+        // Auto-populate imageFiles from any images embedded in the "Imagenes" sheet
+        if (embeddedImages.size > 0) {
+          setImageFiles((prev) => {
+            const next = new Map(prev);
+            for (const [key, dataUrl] of embeddedImages) {
+              const [header, b64] = dataUrl.split(',');
+              const mime = header.match(/:(.*?);/)?.[1] ?? 'image/png';
+              const binary = atob(b64);
+              const bytes = new Uint8Array(binary.length);
+              for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+              next.set(key, new File([bytes], key, { type: mime }));
+            }
+            return next;
+          });
+        }
+
+        await processText(csv, file.name);
       } catch (err) {
         alert(`No se pudo leer el archivo Excel: ${err instanceof Error ? err.message : String(err)}`);
         setIsProcessing(false);

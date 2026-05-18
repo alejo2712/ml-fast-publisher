@@ -17,6 +17,7 @@
     "gen:fixture": "npx tsx scripts/generate-real-publish-test.ts",
     "gen:images": "npx tsx scripts/generate-test-images.ts",
     "gen:fixture:https": "npx tsx scripts/generate-https-publish-test.ts",
+    "gen:fixture:embedded": "npx tsx scripts/generate-embedded-publish-test.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

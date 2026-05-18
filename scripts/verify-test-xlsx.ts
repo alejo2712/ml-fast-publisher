@@ -9,7 +9,7 @@ import { parseCsvText, parseXlsxBuffer } from '../src/lib/csv/parser';
 async function main() {
   const filePath = path.resolve(__dirname, '../tests/fixtures/test-products-appliances.xlsx');
   const buffer = fs.readFileSync(filePath);
-  const csvText = await parseXlsxBuffer(buffer.buffer as ArrayBuffer);
+  const { csv: csvText } = await parseXlsxBuffer(buffer.buffer as ArrayBuffer);
   const result = await parseCsvText(csvText);
 
   console.log('\n═══════════════════════════════════════════════════════════');

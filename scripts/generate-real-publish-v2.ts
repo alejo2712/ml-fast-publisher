@@ -280,7 +280,7 @@ async function main() {
 
   const buf = fs.readFileSync(outPath);
   const ab  = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
-  const csv = await parseXlsxBuffer(ab);
+  const { csv } = await parseXlsxBuffer(ab);
   const result = await parseCsvText(csv);
 
   console.log(`Rows parsed: ${result.rows.length}`);

@@ -301,20 +301,46 @@ function extractProductType(row: Record<string, string>): ApplianceType | undefi
   return normalizeProductType(raw);
 }
 
+export interface XlsxParseResult {
+  csv: string;
+  /**
+   * Images embedded in the workbook's "Imagenes" sheet.
+   * Key = normalized filename (lowercase, no path prefix).
+   * Value = data URL (e.g. "data:image/png;base64,...").
+   * Empty map when no "Imagenes" sheet is present.
+   */
+  embeddedImages: Map<string, string>;
+}
+
 /**
- * Parse an Excel (.xlsx / .xls) ArrayBuffer into CSV text for processing.
- * Uses the xlsx library (already in package.json).
+ * Parse an Excel (.xlsx / .xls) ArrayBuffer into CSV text plus any embedded images.
+ * Images are read from an optional "Imagenes" sheet with columns: nombre_archivo, base64_data.
  */
-export async function parseXlsxBuffer(buffer: ArrayBuffer): Promise<string> {
+export async function parseXlsxBuffer(buffer: ArrayBuffer): Promise<XlsxParseResult> {
   const XLSX = await import('xlsx');
   const wb = XLSX.read(buffer, { type: 'array' });
 
-  // Use the first sheet
+  // Use the first sheet for product data
   const sheetName = wb.SheetNames[0];
   const ws = wb.Sheets[sheetName];
+  const csv = XLSX.utils.sheet_to_csv(ws);
 
-  // Convert to CSV text — parseCsvText handles the rest
-  return XLSX.utils.sheet_to_csv(ws);
+  // Extract embedded images from the "Imagenes" sheet if present
+  const embeddedImages = new Map<string, string>();
+  const imgSheet = wb.Sheets['Imagenes'];
+  if (imgSheet) {
+    type ImgRow = { nombre_archivo?: string; base64_data?: string };
+    const imgRows = XLSX.utils.sheet_to_json<ImgRow>(imgSheet);
+    for (const row of imgRows) {
+      if (row.nombre_archivo && row.base64_data) {
+        // Normalize key to match what BulkUpload uses for imageFiles Map
+        const key = row.nombre_archivo.trim().replace(/^.*[/\\]/, '').toLowerCase();
+        embeddedImages.set(key, row.base64_data);
+      }
+    }
+  }
+
+  return { csv, embeddedImages };
 }
 
 export async function parseCsvText(text: string): Promise<CsvParseResult> {
