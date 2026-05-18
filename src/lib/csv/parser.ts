@@ -4,6 +4,8 @@ import { buildProductDraft, buildMLPayload } from '@/lib/payload-builder';
 import { validateDraft } from '@/lib/validation';
 import { CSV_COLUMNS } from './template';
 import type { MLPayload, MissingField } from '@/types';
+import { extractEmbeddedImages, type EmbeddedImage } from '@/lib/excel/extract-embedded-images';
+export type { EmbeddedImage };
 
 export interface CsvRowResult {
   rowIndex: number;           // 1-based, excluding header
@@ -304,43 +306,31 @@ function extractProductType(row: Record<string, string>): ApplianceType | undefi
 export interface XlsxParseResult {
   csv: string;
   /**
-   * Images embedded in the workbook's "Imagenes" sheet.
-   * Key = normalized filename (lowercase, no path prefix).
-   * Value = data URL (e.g. "data:image/png;base64,...").
-   * Empty map when no "Imagenes" sheet is present.
+   * Images extracted from Excel drawing objects (Insert → Pictures).
+   * Key = 1-based product row index (header is row 0, first product is row 1).
+   * Value = array of images anchored to that row.
+   * Empty map when the workbook has no embedded drawings.
    */
-  embeddedImages: Map<string, string>;
+  perRowImages: Map<number, EmbeddedImage[]>;
 }
 
 /**
- * Parse an Excel (.xlsx / .xls) ArrayBuffer into CSV text plus any embedded images.
- * Images are read from an optional "Imagenes" sheet with columns: nombre_archivo, base64_data.
+ * Parse an Excel (.xlsx / .xls) ArrayBuffer.
+ * Returns the first sheet as CSV text and any images embedded via Excel's
+ * native drawing mechanism (extracted from xl/media/ + xl/drawings/).
  */
 export async function parseXlsxBuffer(buffer: ArrayBuffer): Promise<XlsxParseResult> {
   const XLSX = await import('xlsx');
   const wb = XLSX.read(buffer, { type: 'array' });
 
-  // Use the first sheet for product data
   const sheetName = wb.SheetNames[0];
   const ws = wb.Sheets[sheetName];
   const csv = XLSX.utils.sheet_to_csv(ws);
 
-  // Extract embedded images from the "Imagenes" sheet if present
-  const embeddedImages = new Map<string, string>();
-  const imgSheet = wb.Sheets['Imagenes'];
-  if (imgSheet) {
-    type ImgRow = { nombre_archivo?: string; base64_data?: string };
-    const imgRows = XLSX.utils.sheet_to_json<ImgRow>(imgSheet);
-    for (const row of imgRows) {
-      if (row.nombre_archivo && row.base64_data) {
-        // Normalize key to match what BulkUpload uses for imageFiles Map
-        const key = row.nombre_archivo.trim().replace(/^.*[/\\]/, '').toLowerCase();
-        embeddedImages.set(key, row.base64_data);
-      }
-    }
-  }
+  // Extract images from Excel drawing objects (parallel with CSV parse)
+  const { rowImages: perRowImages } = await extractEmbeddedImages(buffer);
 
-  return { csv, embeddedImages };
+  return { csv, perRowImages };
 }
 
 export async function parseCsvText(text: string): Promise<CsvParseResult> {

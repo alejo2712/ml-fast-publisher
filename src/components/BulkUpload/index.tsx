@@ -67,27 +67,75 @@ export function BulkUpload() {
       setFileName(file.name);
       try {
         const buffer = await file.arrayBuffer();
-        const { csv, embeddedImages } = await parseXlsxBuffer(buffer);
+        const { csv, perRowImages } = await parseXlsxBuffer(buffer);
+        const parsed = await parseCsvText(csv);
 
-        // Auto-populate imageFiles from any images embedded in the "Imagenes" sheet
-        if (embeddedImages.size > 0) {
+        if (perRowImages.size > 0) {
+          // ── Embedded-image path ──────────────────────────────────────────
+          // Images are embedded as Excel drawing objects. Inject them into
+          // each row's draft so no separate PNG upload is required.
+          const newImageFiles = new Map<string, File>();
+
+          const enrichedRows = parsed.rows.map((row) => {
+            const imgs = perRowImages.get(row.rowIndex);
+            if (!imgs || imgs.length === 0 || !row.draft) return row;
+
+            const filenames = imgs.map((img) => {
+              const f = new File([img.data as BlobPart], img.filename, { type: img.mimeType });
+              newImageFiles.set(img.filename, f);
+              return img.filename;
+            });
+
+            const updatedDraft: ProductDraft = { ...row.draft, images: filenames };
+            const validation = validateDraft(updatedDraft);
+            const payload = buildMLPayload(updatedDraft);
+
+            return {
+              ...row,
+              draft: updatedDraft,
+              payload,
+              localImageRefs: filenames,
+              missingFields: validation.missingFields,
+              errors: validation.fieldErrors.map((fe) => `${fe.label}: ${fe.message}`),
+              status: (
+                validation.fieldErrors.length > 0 ? 'error' :
+                validation.missingFields.length > 0 ? 'warnings' : 'ok'
+              ) as CsvRowResult['status'],
+            };
+          });
+
           setImageFiles((prev) => {
             const next = new Map(prev);
-            for (const [key, dataUrl] of embeddedImages) {
-              const [header, b64] = dataUrl.split(',');
-              const mime = header.match(/:(.*?);/)?.[1] ?? 'image/png';
-              const binary = atob(b64);
-              const bytes = new Uint8Array(binary.length);
-              for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-              next.set(key, new File([bytes], key, { type: mime }));
-            }
+            newImageFiles.forEach((f, k) => next.set(k, f));
             return next;
           });
-        }
 
-        await processText(csv, file.name);
+          const displayRows = skipInvalid
+            ? enrichedRows.filter((r) => r.status !== 'error')
+            : enrichedRows;
+          setRows(displayRows);
+          setSummary({
+            ok: enrichedRows.filter((r) => r.status === 'ok').length,
+            warnings: enrichedRows.filter((r) => r.status === 'warnings').length,
+            errors: skipInvalid ? 0 : enrichedRows.filter((r) => r.status === 'error').length,
+          });
+        } else {
+          // ── Standard path (no embedded drawings) ────────────────────────
+          // localImageRefs come from the imagenes column → user uploads PNGs separately
+          const displayRows = skipInvalid
+            ? parsed.rows.filter((r) => r.status !== 'error')
+            : parsed.rows;
+          setRows(displayRows);
+          setSummary({
+            ok: parsed.totalOk,
+            warnings: parsed.totalWarnings,
+            errors: skipInvalid ? 0 : parsed.totalErrors,
+          });
+        }
       } catch (err) {
         alert(`No se pudo leer el archivo Excel: ${err instanceof Error ? err.message : String(err)}`);
+        setIsProcessing(false);
+      } finally {
         setIsProcessing(false);
       }
       return;
