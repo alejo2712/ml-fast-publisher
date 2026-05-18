@@ -16,7 +16,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { parseCsvText, parseXlsxBuffer, isLocalImageFilename } from '../src/lib/csv/parser';
 import { buildMLPayload } from '../src/lib/payload-builder';
-import { validatePathForApplianceType, APPLIANCE_FALLBACK_CATEGORIES } from '../src/lib/mercadolibre/category-resolver';
+import { validatePathForApplianceType } from '../src/lib/mercadolibre/category-resolver';
 import type { MLAttribute } from '../src/types';
 
 const FIXTURE_PATH = path.resolve(__dirname, '../tests/fixtures/ml-real-publish-final.xlsx');
@@ -240,8 +240,8 @@ async function main() {
   assert(!validatePathForApplianceType(fridgeFurniture, 'refrigerator'), 'Refrigerator: furniture path BLOCKED');
   assert(!validatePathForApplianceType(fridgeWrongElectro, 'refrigerator'), 'Refrigerator: hornos path BLOCKED (no heladera/refriger keyword)');
 
-  assert(!!APPLIANCE_FALLBACK_CATEGORIES['refrigerator'], 'Refrigerator fallback category defined');
-  assert(!!APPLIANCE_FALLBACK_CATEGORIES['microwave'], 'Microwave fallback category defined');
+  // APPLIANCE_FALLBACK_CATEGORIES removed — all hardcoded IDs were wrong (MLA1577=Microondas, MLA4749=Mesas Ratonas)
+  // Category must now be resolved via domain_discovery or specified in categoria_ml column.
 
   // ── Summary ───────────────────────────────────────────────────────────────
   const total = passed + failed;

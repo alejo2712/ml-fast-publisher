@@ -20,6 +20,7 @@
     "gen:fixture:embedded": "npx tsx scripts/generate-embedded-publish-test.ts",
     "test:embedded-images": "npx tsx scripts/test-embedded-images.ts",
     "test:embedded-excel": "npx tsx scripts/test-embedded-excel.ts",
+    "test:category-guard": "npx tsx scripts/test-category-guard.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

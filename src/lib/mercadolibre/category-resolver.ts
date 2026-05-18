@@ -88,27 +88,19 @@ export const APPLIANCE_PATH_KEYWORDS: Partial<Record<ApplianceType, string[]>> =
 };
 
 /**
- * Safe hardcoded fallback category IDs per appliance type.
- * Used when domain_discovery returns a non-appliance category (e.g. furniture for a microwave).
- * These are NOT guaranteed to be leaf categories — they're starting points for manual override.
- * Sellers should set `categoria_ml` explicitly when publishing to ensure the correct leaf.
+ * Hardcoded fallback category IDs were REMOVED.
+ *
+ * All previously-stored IDs (MLA1577, MLA4749, etc.) pointed to completely wrong categories
+ * after ML re-assigned them (MLA1577 = Microondas, MLA4749 = Mesas Ratonas, etc.).
+ *
+ * The only safe fallback is:
+ *   - Use domain_discovery to get the right category
+ *   - Validate it passes path keywords AND is a leaf
+ *   - If domain_discovery fails or returns wrong domain → return null → block publish
+ *   - User must specify the correct leaf category_id via the "categoria_ml" column
+ *
+ * Do NOT add new hardcoded IDs here without verifying them against the live ML API first.
  */
-export const APPLIANCE_FALLBACK_CATEGORIES: Partial<Record<ApplianceType, string>> = {
-  refrigerator:    'MLA1577',
-  freezer:         'MLA4748',
-  washing_machine: 'MLA1574',
-  dryer:           'MLA4745',
-  dishwasher:      'MLA4746',
-  oven:            'MLA4750',
-  stove:           'MLA4752',
-  microwave:       'MLA4749',
-  air_fryer:       'MLA438470',
-  blender:         'MLA439005',
-  coffee_maker:    'MLA4753',
-  electric_kettle: 'MLA5554',
-  vacuum_cleaner:  'MLA1763',
-  iron:            'MLA4755',
-};
 
 /**
  * Validate that a category's path_from_root matches the expected appliance type.
@@ -163,51 +155,16 @@ export async function resolveCategory(
     return null;
   }
 
-  // Validate the resolved category path against the expected appliance type
+  // Validate the resolved category path against the expected appliance type.
+  // If domain_discovery returns a wrong-domain category (e.g. furniture for a microwave),
+  // we MUST return null — never publish in an unrelated category.
+  // There are no safe hardcoded fallbacks (all previously-stored IDs were wrong after ML re-assignment).
+  // The user must supply the correct leaf category via the "categoria_ml" column.
   if (applianceType && !validatePathForApplianceType(resolution.pathFromRoot, applianceType)) {
-    const fallbackId = APPLIANCE_FALLBACK_CATEGORIES[applianceType];
-    const reason = `domain_discovery resolvió "${resolution.categoryName}" (${resolution.pathString}) pero el producto es "${applianceType}". Usando categoría de respaldo.`;
-
-    logger.warn('category-resolver', 'domain_discovery returned wrong-domain category', {
+    logger.warn('category-resolver', 'domain_discovery returned wrong-domain category — blocking, no fallback', {
       applianceType,
       resolvedCategory: resolution.categoryName,
       resolvedPath: resolution.pathString,
-      fallbackId: fallbackId ?? '(none)',
-    });
-
-    if (fallbackId) {
-      const fallbackResolution = await buildResolution(fallbackId, '', '', accessToken);
-      if (fallbackResolution) {
-        // Also validate that the fallback category's path matches the expected type.
-        // If MLA4749 resolves to something unexpected, we refuse to use it too.
-        if (!validatePathForApplianceType(fallbackResolution.pathFromRoot, applianceType)) {
-          logger.warn('category-resolver', 'Fallback category path also fails validation — returning null', {
-            applianceType,
-            fallbackId,
-            fallbackPath: fallbackResolution.pathString,
-          });
-          titleCache.set(cacheKey, null);
-          return null;
-        }
-        const result: MLCategoryResolution = {
-          ...fallbackResolution,
-          usedFallback: true,
-          fallbackReason: reason,
-        };
-        titleCache.set(cacheKey, result);
-        return result;
-      }
-    }
-
-    // Fallback category lookup failed (API error/timeout).
-    // NEVER return the wrong-domain resolution — returning null means the enricher
-    // keeps the original payload category_id (our static hardcoded safe ID) rather
-    // than publishing in an unrelated category (e.g., furniture for a microwave).
-    logger.warn('category-resolver', 'Fallback category lookup failed — returning null to prevent wrong-domain publish', {
-      applianceType,
-      rejectedCategory: resolution.categoryName,
-      rejectedPath: resolution.pathString,
-      fallbackId: fallbackId ?? '(none)',
     });
     titleCache.set(cacheKey, null);
     return null;
