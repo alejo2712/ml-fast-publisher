@@ -113,13 +113,18 @@ export function BulkUpload() {
     if (pasteText.trim()) processText(pasteText, 'pegado');
   }
 
+  /** Strip path prefix and lowercase — robust to fake browser paths like "C:\fakepath\photo.png" and Excel path prefixes like "images/photo.png" */
+  function normalizeImageKey(name: string): string {
+    return name.trim().replace(/^.*[/\\]/, '').toLowerCase();
+  }
+
   function addImageFiles(files: FileList | File[]) {
     const arr = Array.from(files);
     const imageOnly = arr.filter((f) => /\.(jpe?g|png|webp|gif)$/i.test(f.name));
     if (imageOnly.length === 0) return;
     setImageFiles((prev) => {
       const next = new Map(prev);
-      imageOnly.forEach((f) => next.set(f.name.toLowerCase(), f));
+      imageOnly.forEach((f) => next.set(normalizeImageKey(f.name), f));
       return next;
     });
   }
@@ -127,7 +132,7 @@ export function BulkUpload() {
   function removeImageFile(filename: string) {
     setImageFiles((prev) => {
       const next = new Map(prev);
-      next.delete(filename.toLowerCase());
+      next.delete(normalizeImageKey(filename));
       return next;
     });
   }
@@ -178,7 +183,7 @@ export function BulkUpload() {
     // Count how many rows have local image refs that need matching
     const rowsWithLocalImages = rows.filter((r) => r.localImageRefs.length > 0);
     const allLocalRefs = [...new Set(rowsWithLocalImages.flatMap((r) => r.localImageRefs))];
-    const missingRefs = allLocalRefs.filter((ref) => !imageFiles.has(ref.toLowerCase()));
+    const missingRefs = allLocalRefs.filter((ref) => !imageFiles.has(normalizeImageKey(ref)));
 
     return (
       <div className="w-full max-w-3xl mx-auto space-y-4">
@@ -238,7 +243,7 @@ export function BulkUpload() {
             {imageFiles.size > 0 && (
               <div className="space-y-1">
                 {allLocalRefs.map((ref) => {
-                  const found = imageFiles.has(ref.toLowerCase());
+                  const found = imageFiles.has(normalizeImageKey(ref));
                   return (
                     <div key={ref} className={cn(
                       'flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs',
@@ -260,7 +265,7 @@ export function BulkUpload() {
                 })}
                 {/* Extra uploaded files not referenced in Excel */}
                 {Array.from(imageFiles.keys())
-                  .filter((k) => !allLocalRefs.map((r) => r.toLowerCase()).includes(k))
+                  .filter((k) => !allLocalRefs.map((r) => normalizeImageKey(r)).includes(k))
                   .map((k) => (
                     <div key={k} className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs bg-gray-50 border border-gray-200 text-gray-500">
                       <span className="font-mono flex-1 truncate">{k}</span>
@@ -273,6 +278,44 @@ export function BulkUpload() {
               </div>
             )}
           </div>
+        )}
+
+        {/* Debug panel — shows raw upload vs Excel ref matching so the user can diagnose filename mismatches */}
+        {(imageFiles.size > 0 || allLocalRefs.length > 0) && (
+          <details className="rounded-xl border border-gray-200 bg-gray-50/80 p-3 text-xs open:pb-3">
+            <summary className="cursor-pointer select-none font-medium text-gray-500 hover:text-gray-700">
+              Imágenes detectadas — {imageFiles.size} subida{imageFiles.size !== 1 ? 's' : ''}, {allLocalRefs.length - missingRefs.length}/{allLocalRefs.length} reconocida{allLocalRefs.length !== 1 ? 's' : ''}
+            </summary>
+            <div className="mt-3 space-y-3">
+              {imageFiles.size > 0 && (
+                <div>
+                  <p className="font-semibold text-gray-600 mb-1">Archivos subidos (clave de búsqueda):</p>
+                  <div className="space-y-0.5 pl-2">
+                    {Array.from(imageFiles.keys()).map((k) => (
+                      <p key={k} className="font-mono text-gray-700">{k}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {allLocalRefs.length > 0 && (
+                <div>
+                  <p className="font-semibold text-gray-600 mb-1">Referencias del Excel (clave normalizada → resultado):</p>
+                  <div className="space-y-0.5 pl-2">
+                    {allLocalRefs.map((ref) => {
+                      const key = normalizeImageKey(ref);
+                      const matched = imageFiles.has(key);
+                      return (
+                        <p key={ref} className={`font-mono ${matched ? 'text-emerald-700' : 'text-red-600'}`}>
+                          {ref === key ? ref : `${ref} → ${key}`}
+                          {' '}{matched ? '✓ coincide' : '✗ no encontrada'}
+                        </p>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </details>
         )}
 
         <BulkResults

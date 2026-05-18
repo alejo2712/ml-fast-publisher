@@ -144,7 +144,9 @@ const LEGACY_HEADERS: Record<string, string> = {
  */
 export function isLocalImageFilename(s: string): boolean {
   if (!s || s.startsWith('http://') || s.startsWith('https://')) return false;
-  return /\.(jpe?g|png|webp|gif)$/i.test(s.trim());
+  // Use basename so "images/photo.png" is treated the same as "photo.png"
+  const basename = s.trim().replace(/^.*[/\\]/, '');
+  return /\.(jpe?g|png|webp|gif)$/i.test(basename) && basename.length > 0;
 }
 
 /**

@@ -17,6 +17,11 @@ const CONDITION_LABELS: Record<string, string> = {
   new: 'Nuevo', used: 'Usado', refurbished: 'Reacondicionado',
 };
 
+/** Normalize an image ref or filename to a bare lowercase basename — strips path prefix and fake browser paths */
+function normalizeImageKey(name: string): string {
+  return name.trim().replace(/^.*[/\\]/, '').toLowerCase();
+}
+
 type PublishRowStatus = 'idle' | 'publishing' | 'published' | 'dry_run' | 'failed' | 'preflight_failed' | 'skipped_invalid';
 
 interface RowPublishState {
@@ -398,7 +403,7 @@ function RowDetail({ row, publishState, mlImageUrls, imageUploadErrors, imageFil
           {row.localImageRefs.map((ref) => {
             const mlUrl = mlImageUrls?.get(ref.toLowerCase());
             const uploadError = imageUploadErrors?.get(ref);
-            const isMatched = imageFiles?.has(ref.toLowerCase());
+            const isMatched = imageFiles?.has(normalizeImageKey(ref));
             return (
               <div key={ref} className={cn(
                 'flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs',
@@ -570,8 +575,8 @@ function RowDetail({ row, publishState, mlImageUrls, imageUploadErrors, imageFil
               <span className="text-gray-400">Imágenes:</span>{' '}
               {row.localImageRefs.length > 0 ? (
                 <>
-                  {row.localImageRefs.filter((r) => imageFiles?.has(r.toLowerCase())).length}/{row.localImageRefs.length} listas para subir a ML CDN
-                  {row.localImageRefs.some((r) => !imageFiles?.has(r.toLowerCase())) && (
+                  {row.localImageRefs.filter((r) => imageFiles?.has(normalizeImageKey(r))).length}/{row.localImageRefs.length} listas para subir a ML CDN
+                  {row.localImageRefs.some((r) => !imageFiles?.has(normalizeImageKey(r))) && (
                     <span className="ml-1 text-red-500">— arrastrá los archivos faltantes</span>
                   )}
                 </>
@@ -820,7 +825,7 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
     const missing: string[] = [];
     publishableRows.forEach((r) => {
       r.localImageRefs.forEach((ref) => {
-        if (!imageFiles?.has(ref.toLowerCase()) && !mlImageUrls.has(ref.toLowerCase())) {
+        if (!imageFiles?.has(normalizeImageKey(ref)) && !mlImageUrls.has(normalizeImageKey(ref))) {
           if (!missing.includes(ref)) missing.push(ref);
         }
       });
@@ -856,8 +861,8 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
       const formData = new FormData();
       let hasFiles = false;
       for (const filename of localFilesToUpload) {
-        if (currentMlImageUrls.has(filename.toLowerCase())) continue; // already uploaded
-        const file = imageFiles.get(filename.toLowerCase());
+        if (currentMlImageUrls.has(normalizeImageKey(filename))) continue; // already uploaded
+        const file = imageFiles.get(normalizeImageKey(filename));
         if (file) {
           formData.append('files', file, file.name);
           hasFiles = true;
@@ -1062,8 +1067,8 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
       const formData = new FormData();
       let hasFiles = false;
       for (const filename of localFilesToUpload) {
-        if (currentMlImageUrls.has(filename.toLowerCase())) continue;
-        const file = imageFiles.get(filename.toLowerCase());
+        if (currentMlImageUrls.has(normalizeImageKey(filename))) continue;
+        const file = imageFiles.get(normalizeImageKey(filename));
         if (file) { formData.append('files', file, file.name); hasFiles = true; }
       }
       if (hasFiles) {

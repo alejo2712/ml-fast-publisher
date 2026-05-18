@@ -13,6 +13,7 @@
     "test:final-payload": "npx tsx scripts/test-final-payload.ts",
     "test:bulk-ui-readiness": "npx tsx scripts/test-bulk-ui-readiness.ts",
     "test:prepare-publish": "npx tsx scripts/test-prepare-publish.ts",
+    "test:image-matching": "npx tsx scripts/test-image-matching.ts",
     "gen:fixture": "npx tsx scripts/generate-real-publish-test.ts",
     "gen:images": "npx tsx scripts/generate-test-images.ts",
     "postinstall": "prisma generate"
