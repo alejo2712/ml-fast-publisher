@@ -158,47 +158,64 @@ export async function enrichPayload(
     };
   }
 
-  // ── Fallback category leaf check — BLOCKING ───────────────────────────────
-  // When resolveCategory returned null (API failure, wrong domain, no fallback), we fall
-  // back to the hardcoded payload.category_id. But hardcoded IDs like MLA1577/MLA4749 are
-  // often non-leaf. We must validate them before sending to ML.
+  // ── Fallback category validation — BLOCKING ──────────────────────────────
+  // When resolveCategory returned null (domain_discovery failed or returned wrong domain),
+  // check if the payload has an explicit category_id (from user's "categoria_ml" column).
+  //
+  // CRITICAL: also validate path for appliance type — prevents publishing with wrong-domain
+  // category IDs (e.g. MLA1577 = Microondas being used for a refrigerator listing).
+  // This is the guard that was missing and caused ML to finalize items as "wrong category".
   if (!resolution) {
+    // Empty category_id means category was never configured — block immediately
+    if (!payload.category_id) {
+      const err = applianceType
+        ? `No se pudo resolver la categoría ML para "${applianceType}". Especificá la categoría correcta en la columna "categoria_ml" (ej: ID de hoja como MLA453552).`
+        : `category_id faltante. Especificá la categoría en la columna "categoria_ml".`;
+      logger.warn('publish', 'Blocking publish: no category_id and resolution failed', { applianceType });
+      return { payload, resolution: null, warnings, missingRequired: [], hasBlockingMissing: true,
+        usedFallback: false, categoryPath: '', categoryError: err };
+    }
+
     const fallbackValidation = await validateCategoryId(payload.category_id, accessToken);
     if (!fallbackValidation) {
       const err = `La categoría "${payload.category_id}" no existe en Mercado Libre. Especificá la categoría correcta en la columna "categoria_ml".`;
-      logger.warn('publish', 'Blocking publish: hardcoded category_id does not exist in ML', { categoryId: payload.category_id });
-      return {
-        payload,
-        resolution: null,
-        warnings,
-        missingRequired: [],
-        hasBlockingMissing: true,
-        usedFallback: false,
-        categoryPath: payload.category_id,
-        categoryError: err,
-      };
+      logger.warn('publish', 'Blocking publish: category_id does not exist in ML', { categoryId: payload.category_id });
+      return { payload, resolution: null, warnings, missingRequired: [], hasBlockingMissing: true,
+        usedFallback: false, categoryPath: payload.category_id, categoryError: err };
     }
+
+    // CRITICAL: validate that this category_id actually matches the product type.
+    // Without this check, MLA1577 (Microondas) would be used for a refrigerator row,
+    // causing ML to accept the publish but immediately finalize it as "wrong category".
+    if (applianceType && !validatePathForApplianceType(fallbackValidation.pathFromRoot, applianceType)) {
+      const keywords = APPLIANCE_PATH_KEYWORDS[applianceType] ?? [];
+      const err =
+        `La categoría "${payload.category_id}" (${fallbackValidation.categoryName}) ` +
+        `no corresponde al tipo de producto "${applianceType}". ` +
+        `Ruta actual: ${fallbackValidation.pathString}. ` +
+        `El camino debe contener: ${keywords.join(', ')}. ` +
+        `Especificá la categoría correcta en la columna "categoria_ml".`;
+      logger.warn('publish', 'Blocking publish: category_id does not match product type', {
+        applianceType, categoryId: payload.category_id,
+        categoryName: fallbackValidation.categoryName, pathString: fallbackValidation.pathString,
+        requiredKeywords: keywords,
+      });
+      return { payload, resolution: fallbackValidation, warnings, missingRequired: [], hasBlockingMissing: true,
+        usedFallback: false, categoryPath: fallbackValidation.pathString, categoryError: err };
+    }
+
     if (!fallbackValidation.isLeaf) {
       const err = `La categoría "${payload.category_id}" (${fallbackValidation.categoryName}) no es una categoría hoja. ML finalizará el anuncio inmediatamente. Especificá la subcategoría exacta en "categoria_ml". Ruta: ${fallbackValidation.pathString}`;
-      logger.warn('publish', 'Blocking publish: hardcoded category_id is not a leaf', {
-        categoryId: payload.category_id,
-        categoryName: fallbackValidation.categoryName,
+      logger.warn('publish', 'Blocking publish: category_id is not a leaf', {
+        categoryId: payload.category_id, categoryName: fallbackValidation.categoryName,
         pathString: fallbackValidation.pathString,
       });
-      return {
-        payload,
-        resolution: fallbackValidation,
-        warnings,
-        missingRequired: [],
-        hasBlockingMissing: true,
-        usedFallback: false,
-        categoryPath: fallbackValidation.pathString,
-        categoryError: err,
-      };
+      return { payload, resolution: fallbackValidation, warnings, missingRequired: [], hasBlockingMissing: true,
+        usedFallback: false, categoryPath: fallbackValidation.pathString, categoryError: err };
     }
-    // Fallback category is valid leaf — use it, with a warning
-    warnings.push(`Categoría resuelta por fallback: ${fallbackValidation.categoryName} (${fallbackValidation.categoryId}). Para mayor precisión, especificá "categoria_ml".`);
-    // resolution remains null but we know categoryId is valid — continue with payload.category_id
+
+    // Category exists, matches product type, and is a leaf — safe to use as fallback
+    warnings.push(`Categoría validada por ID: ${fallbackValidation.categoryName} (${fallbackValidation.categoryId}).`);
   }
 
   const resolvedCategoryId = resolution?.categoryId ?? payload.category_id;

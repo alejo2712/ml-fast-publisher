@@ -4,7 +4,7 @@ export const APPLIANCE_CATEGORIES: CategoryConfig[] = [
   {
     id: 'refrigerator',
     name: 'Heladera / Refrigerador',
-    mlCategoryId: 'MLA1577',
+    mlCategoryId: '', // MLA1577 was Microondas — wrong, must resolve via domain_discovery
     applianceType: 'refrigerator',
     keywords: [
       'heladera', 'refrigerador', 'frigorífico', 'nevera', 'fridge', 'refrigerator',
@@ -26,7 +26,7 @@ export const APPLIANCE_CATEGORIES: CategoryConfig[] = [
   {
     id: 'washing_machine',
     name: 'Lavarropas',
-    mlCategoryId: 'MLA1574',
+    mlCategoryId: '', // MLA1574 was Hogar/Muebles non-leaf — wrong
     applianceType: 'washing_machine',
     keywords: [
       'lavarropas', 'lavadora', 'washing machine', 'lavasecadora', 'carga frontal', 'carga superior',
@@ -45,7 +45,7 @@ export const APPLIANCE_CATEGORIES: CategoryConfig[] = [
   {
     id: 'dryer',
     name: 'Secadora',
-    mlCategoryId: 'MLA4745',
+    mlCategoryId: '', // MLA4745 was Pádel — wrong
     applianceType: 'dryer',
     keywords: ['secadora', 'secarropas', 'dryer', 'secado'],
     attributes: [
@@ -59,7 +59,7 @@ export const APPLIANCE_CATEGORIES: CategoryConfig[] = [
   {
     id: 'dishwasher',
     name: 'Lavavajillas',
-    mlCategoryId: 'MLA4746',
+    mlCategoryId: '',
     applianceType: 'dishwasher',
     keywords: ['lavavajillas', 'lavacopas', 'dishwasher', 'lavaplatos'],
     attributes: [
@@ -73,7 +73,7 @@ export const APPLIANCE_CATEGORIES: CategoryConfig[] = [
   {
     id: 'oven',
     name: 'Horno',
-    mlCategoryId: 'MLA4750',
+    mlCategoryId: '',
     applianceType: 'oven',
     keywords: ['horno', 'oven', 'hornito', 'horno eléctrico', 'horno a gas', 'horno convector', 'horno conveccion'],
     attributes: [
@@ -88,7 +88,7 @@ export const APPLIANCE_CATEGORIES: CategoryConfig[] = [
   {
     id: 'stove',
     name: 'Cocina / Anafe',
-    mlCategoryId: 'MLA4752',
+    mlCategoryId: '', // MLA4752 was Jarrones — wrong
     applianceType: 'stove',
     keywords: ['cocina', 'anafe', 'estufa', 'stove', 'cooktop', 'hornallas', 'vitrocerámica', 'inducción'],
     attributes: [
@@ -102,7 +102,7 @@ export const APPLIANCE_CATEGORIES: CategoryConfig[] = [
   {
     id: 'freezer',
     name: 'Freezer',
-    mlCategoryId: 'MLA4748',
+    mlCategoryId: '',
     applianceType: 'freezer',
     keywords: ['freezer', 'congelador', 'deep freeze', 'conservadora'],
     attributes: [
@@ -117,7 +117,7 @@ export const APPLIANCE_CATEGORIES: CategoryConfig[] = [
   {
     id: 'microwave',
     name: 'Microondas',
-    mlCategoryId: 'MLA4749',
+    mlCategoryId: '', // MLA4749 was Mesas Ratonas — wrong
     applianceType: 'microwave',
     keywords: ['microondas', 'microwave', 'horno microondas'],
     attributes: [
@@ -132,7 +132,7 @@ export const APPLIANCE_CATEGORIES: CategoryConfig[] = [
   {
     id: 'air_fryer',
     name: 'Freidora de Aire',
-    mlCategoryId: 'MLA438470',
+    mlCategoryId: '',
     applianceType: 'air_fryer',
     keywords: ['freidora de aire', 'air fryer', 'airfryer', 'freidora sin aceite', 'friteuse'],
     attributes: [
@@ -147,7 +147,7 @@ export const APPLIANCE_CATEGORIES: CategoryConfig[] = [
   {
     id: 'blender',
     name: 'Licuadora',
-    mlCategoryId: 'MLA439005',
+    mlCategoryId: '',
     applianceType: 'blender',
     keywords: ['licuadora', 'blender', 'batidora de vaso', 'procesadora', 'smoothie'],
     attributes: [
@@ -162,7 +162,7 @@ export const APPLIANCE_CATEGORIES: CategoryConfig[] = [
   {
     id: 'coffee_maker',
     name: 'Cafetera',
-    mlCategoryId: 'MLA4753',
+    mlCategoryId: '',
     applianceType: 'coffee_maker',
     keywords: ['cafetera', 'coffee maker', 'espresso', 'capsulas', 'nespresso', 'dolce gusto', 'percoladora', 'french press', 'prensa francesa'],
     attributes: [
@@ -177,7 +177,7 @@ export const APPLIANCE_CATEGORIES: CategoryConfig[] = [
   {
     id: 'electric_kettle',
     name: 'Pava Eléctrica',
-    mlCategoryId: 'MLA5554',
+    mlCategoryId: '',
     applianceType: 'electric_kettle',
     keywords: ['pava eléctrica', 'hervidor', 'kettle', 'tetera eléctrica', 'calentador de agua'],
     attributes: [
@@ -191,7 +191,7 @@ export const APPLIANCE_CATEGORIES: CategoryConfig[] = [
   {
     id: 'vacuum_cleaner',
     name: 'Aspiradora',
-    mlCategoryId: 'MLA1763',
+    mlCategoryId: '', // MLA1763 was Motos — wrong
     applianceType: 'vacuum_cleaner',
     keywords: ['aspiradora', 'vacuum', 'aspirador', 'robot aspiradora', 'escoba eléctrica', 'sin bolsa', 'ciclónica'],
     attributes: [
@@ -206,7 +206,7 @@ export const APPLIANCE_CATEGORIES: CategoryConfig[] = [
   {
     id: 'iron',
     name: 'Plancha',
-    mlCategoryId: 'MLA4755',
+    mlCategoryId: '',
     applianceType: 'iron',
     keywords: ['plancha', 'iron', 'vaporizador', 'plancha a vapor', 'centro de planchado'],
     attributes: [
@@ -221,7 +221,7 @@ export const APPLIANCE_CATEGORIES: CategoryConfig[] = [
   {
     id: 'toaster',
     name: 'Tostadora',
-    mlCategoryId: 'MLA4756',
+    mlCategoryId: '',
     applianceType: 'toaster',
     keywords: ['tostadora', 'toaster', 'tostador', 'sandwichera', 'waflera'],
     attributes: [

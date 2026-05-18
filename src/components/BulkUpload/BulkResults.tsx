@@ -550,8 +550,8 @@ function RowDetail({ row, publishState, mlImageUrls, imageUploadErrors, imageFil
               {row.draft.officialCategoryId ? (
                 <span className="text-emerald-700 font-mono">{row.draft.officialCategoryId}</span>
               ) : (
-                <span className="text-amber-600 italic">
-                  {row.payload?.category_id}{' '}→ se resolverá dinámicamente por ML
+                <span className="text-red-600 font-medium italic">
+                  ⚠ Categoría no validada — ejecutá &quot;Preparar publicación&quot; antes de publicar
                 </span>
               )}
             </span>
@@ -1175,6 +1175,19 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
         </div>
       )}
 
+      {/* Prepare-required warning — shown in real mode before prepare is run */}
+      {!mlDryRun && prepareResults.size === 0 && publishableRows.length > 0 && (
+        <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          <AlertTriangle size={15} className="shrink-0 mt-0.5 text-red-600" />
+          <div>
+            <span className="font-semibold">Preparar publicación es obligatorio antes de publicar.</span>{' '}
+            Las categorías de Mercado Libre deben resolverse y validarse primero.
+            Sin este paso, ML puede finalizar los anuncios por &quot;categoría incorrecta&quot; inmediatamente.
+            Hacé click en <strong>Preparar publicación</strong> para validar las categorías y los atributos.
+          </div>
+        </div>
+      )}
+
       {/* Summary bar */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-1.5 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg">
@@ -1232,6 +1245,17 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
               }
             </button>
           )}
+          {/* In real mode, require prepare-publish before allowing publish.
+              Publish without category validation causes ML to finalize listings immediately. */}
+          {!mlDryRun && prepareResults.size === 0 && publishableRows.length > 0 ? (
+            <button
+              disabled
+              title="Ejecutá 'Preparar publicación' primero para validar las categorías ML"
+              className="flex items-center gap-1.5 text-sm font-semibold px-4 py-1.5 rounded-lg bg-gray-200 text-gray-500 cursor-not-allowed opacity-80"
+            >
+              <Send size={14} /> Publicar {publishableRows.length} en Mercado Libre
+            </button>
+          ) : (
           <button
             onClick={() => publishableRows.length > 0 && setShowBulkConfirm(true)}
             disabled={isBulkPublishing || isPreparing || publishableRows.length === 0}
@@ -1249,6 +1273,7 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
               : <><Send size={14} /> Publicar {publishableRows.length} en Mercado Libre</>
             }
           </button>
+          )}
         </div>
       </div>
 

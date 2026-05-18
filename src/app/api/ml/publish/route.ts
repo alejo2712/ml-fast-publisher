@@ -223,7 +223,10 @@ export async function POST(request: NextRequest) {
     }
 
     // 4. Enrich payload — resolve dynamic ML category + filter/fill attributes (real mode only)
-    // Skip when alreadyEnriched=true: payload was already processed by /api/ml/prepare-publish
+    // In real mode, alreadyEnriched=true is REQUIRED: the client must run /api/ml/prepare-publish
+    // first to validate categories. Skipping this step caused ML to finalize listings as
+    // "wrong category" because hardcoded category IDs like MLA1577 and MLA4749 pointed to
+    // completely unrelated ML categories (Microondas and Mesas Ratonas respectively).
     let missingAttrs: MissingAttr[] = [];
     let resolvedCategoryId: string | undefined;
     let resolvedCategoryPath: string | undefined;
