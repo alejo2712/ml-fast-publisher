@@ -16,6 +16,7 @@
     "test:image-matching": "npx tsx scripts/test-image-matching.ts",
     "gen:fixture": "npx tsx scripts/generate-real-publish-test.ts",
     "gen:images": "npx tsx scripts/generate-test-images.ts",
+    "gen:fixture:https": "npx tsx scripts/generate-https-publish-test.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
