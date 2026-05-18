@@ -1,5 +1,63 @@
 # ml-fast-publisher — Project Context
 
+---
+
+## Automated Coding Workflow (always active unless told otherwise)
+
+### Before touching any code
+1. `git status` — confirm clean working tree / current branch
+2. `git log --oneline -5` — understand what was last done
+3. `git branch` — confirm current branch
+4. Check if the module or function you're about to create already exists
+
+### After every code change
+Always run in this order:
+1. `npm run build` — must pass with 0 TypeScript errors
+2. Relevant tests for the modified area:
+   - Parser/CSV/Excel changes → `npm run test:bulk` + `npm run test:bulk-ui-readiness`
+   - Image matching changes → `npm run test:image-matching`
+   - Payload/enrichment changes → `npm run test:final-payload`
+   - Any other area → run the closest matching test script
+
+### If build + tests pass
+1. `git add <specific files>` — never `git add .` or `git add -A`
+2. `git commit -m "..."` — descriptive message
+3. `git push` — push to current branch
+4. `vercel --prod --yes` — deploy to production
+5. `curl -s https://ml-fast-publisher.vercel.app/api/health` — verify production is live
+
+### When changing any of these areas
+Excel format · parser · required columns · image handling · ML payload structure · category validation · attributes · upload flow
+
+→ Automatically regenerate:
+- `npm run gen:fixture` — regenerates `tests/fixtures/ml-real-publish-final.xlsx`
+- `npm run gen:images` — regenerates `tests/fixtures/images/*.png` if image format changed
+
+### Always provide at end of task
+- Exact Excel file to upload: `tests/fixtures/ml-real-publish-final.xlsx`
+- Exact image files to upload: `tests/fixtures/images/refrigerator-front-1200.png`, `refrigerator-open-1200.png`, `microwave-front-1200.png`, `microwave-side-1200.png`
+- Expected UI state after upload
+- Expected Mercado Libre result
+
+### Hard rules — never break
+- No uncommitted changes at end of task
+- No forgotten worktrees / stale branches
+- Never silently redesign architecture — fix the real bug with the smallest safe change
+- When debugging: identify the exact failing function first, prove root cause, then fix
+- Never use `--no-verify`, `--force`, or skip pre-commit hooks
+
+### End-of-task summary format (always)
+```
+Bug/change: <one line>
+Files changed: <list>
+Tests run: <list with pass/fail>
+Commit: <hash>
+Deploy: <vercel URL or "not deployed">
+Production: <"verified" or "skipped">
+```
+
+---
+
 ## Goal
 Multi-user publishing platform that lets users publish products to Mercado Libre in fewer steps than ML's native flow, powered by a deterministic inference engine (AI-replaceable later).
 

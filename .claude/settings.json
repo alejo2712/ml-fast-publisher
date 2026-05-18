@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"systemMessage\": \"ml-fast-publisher checklist → build passed? tests ran? committed? pushed? deployed? production verified? fixture regenerated if needed?\"}'",
+            "statusMessage": "Showing end-of-task checklist"
+          }
+        ]
+      }
+    ]
+  }
+}
