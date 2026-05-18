@@ -25,7 +25,9 @@ function isGarbage(value: string): boolean {
 function isValidImageRef(value: string): boolean {
   const v = value.trim();
   if (v.startsWith('/uploads/')) return true;
-  if (/\.(jpe?g|png|webp|gif)$/i.test(v) && !v.includes('/')) return true; // local filename
+  // Accept local filenames — with or without a path prefix (e.g. "images/photo.png" → basename "photo.png")
+  const basename = v.replace(/^.*[/\\]/, '');
+  if (/\.(jpe?g|png|webp|gif)$/i.test(basename) && basename.length > 0) return true;
   try {
     const url = new URL(v);
     return url.protocol === 'http:' || url.protocol === 'https:';

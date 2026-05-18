@@ -325,7 +325,7 @@ section('XLSX roundtrip (build xlsx in memory → parse back)');
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Productos');
     const xlsxBuffer = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer;
-    const csvText = await parseXlsxBuffer(xlsxBuffer);
+    const { csv: csvText } = await parseXlsxBuffer(xlsxBuffer);
     const result = await parseCsvText(csvText);
 
     ok(result.rows.length === 1, `XLSX roundtrip: 1 row (got ${result.rows.length})`);
@@ -355,7 +355,7 @@ section('XLSX with multiple sheets — uses first sheet only');
   XLSX.utils.book_append_sheet(wb, ws1, 'Productos');
   XLSX.utils.book_append_sheet(wb, ws2, 'Instrucciones');
   const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer;
-  const csvText = await parseXlsxBuffer(buf);
+  const { csv: csvText } = await parseXlsxBuffer(buf);
   const result = await parseCsvText(csvText);
   ok(result.rows.length === 1, `Only 1 data row from sheet 1 (got ${result.rows.length})`);
 }

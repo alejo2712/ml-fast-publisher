@@ -56,7 +56,7 @@ async function main() {
     fileBuffer.byteOffset,
     fileBuffer.byteOffset + fileBuffer.byteLength
   ) as ArrayBuffer;
-  const csvText = await parseXlsxBuffer(ab);
+  const { csv: csvText } = await parseXlsxBuffer(ab);
   const result = await parseCsvText(csvText);
 
   console.log(`\n── Parse result: ${result.rows.length} rows ─────────────────────────────────────`);
@@ -172,7 +172,7 @@ async function main() {
   if (fs.existsSync(LOCAL_FIXTURE)) {
     const localBuf = fs.readFileSync(LOCAL_FIXTURE);
     const localAb = localBuf.buffer.slice(localBuf.byteOffset, localBuf.byteOffset + localBuf.byteLength) as ArrayBuffer;
-    const localCsv = await parseXlsxBuffer(localAb);
+    const { csv: localCsv } = await parseXlsxBuffer(localAb);
     const localResult = await parseCsvText(localCsv);
 
     console.log('\n── Local image fixture parsing ─────────────────────────────────────');

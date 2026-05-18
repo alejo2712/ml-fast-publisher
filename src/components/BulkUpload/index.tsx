@@ -67,10 +67,75 @@ export function BulkUpload() {
       setFileName(file.name);
       try {
         const buffer = await file.arrayBuffer();
-        const csvText = await parseXlsxBuffer(buffer);
-        await processText(csvText, file.name);
+        const { csv, perRowImages } = await parseXlsxBuffer(buffer);
+        const parsed = await parseCsvText(csv);
+
+        if (perRowImages.size > 0) {
+          // ── Embedded-image path ──────────────────────────────────────────
+          // Images are embedded as Excel drawing objects. Inject them into
+          // each row's draft so no separate PNG upload is required.
+          const newImageFiles = new Map<string, File>();
+
+          const enrichedRows = parsed.rows.map((row) => {
+            const imgs = perRowImages.get(row.rowIndex);
+            if (!imgs || imgs.length === 0 || !row.draft) return row;
+
+            const filenames = imgs.map((img) => {
+              const f = new File([img.data as BlobPart], img.filename, { type: img.mimeType });
+              newImageFiles.set(img.filename, f);
+              return img.filename;
+            });
+
+            const updatedDraft: ProductDraft = { ...row.draft, images: filenames };
+            const validation = validateDraft(updatedDraft);
+            const payload = buildMLPayload(updatedDraft);
+
+            return {
+              ...row,
+              draft: updatedDraft,
+              payload,
+              localImageRefs: filenames,
+              missingFields: validation.missingFields,
+              errors: validation.fieldErrors.map((fe) => `${fe.label}: ${fe.message}`),
+              status: (
+                validation.fieldErrors.length > 0 ? 'error' :
+                validation.missingFields.length > 0 ? 'warnings' : 'ok'
+              ) as CsvRowResult['status'],
+            };
+          });
+
+          setImageFiles((prev) => {
+            const next = new Map(prev);
+            newImageFiles.forEach((f, k) => next.set(k, f));
+            return next;
+          });
+
+          const displayRows = skipInvalid
+            ? enrichedRows.filter((r) => r.status !== 'error')
+            : enrichedRows;
+          setRows(displayRows);
+          setSummary({
+            ok: enrichedRows.filter((r) => r.status === 'ok').length,
+            warnings: enrichedRows.filter((r) => r.status === 'warnings').length,
+            errors: skipInvalid ? 0 : enrichedRows.filter((r) => r.status === 'error').length,
+          });
+        } else {
+          // ── Standard path (no embedded drawings) ────────────────────────
+          // localImageRefs come from the imagenes column → user uploads PNGs separately
+          const displayRows = skipInvalid
+            ? parsed.rows.filter((r) => r.status !== 'error')
+            : parsed.rows;
+          setRows(displayRows);
+          setSummary({
+            ok: parsed.totalOk,
+            warnings: parsed.totalWarnings,
+            errors: skipInvalid ? 0 : parsed.totalErrors,
+          });
+        }
       } catch (err) {
         alert(`No se pudo leer el archivo Excel: ${err instanceof Error ? err.message : String(err)}`);
+        setIsProcessing(false);
+      } finally {
         setIsProcessing(false);
       }
       return;
@@ -113,13 +178,18 @@ export function BulkUpload() {
     if (pasteText.trim()) processText(pasteText, 'pegado');
   }
 
+  /** Strip path prefix and lowercase — robust to fake browser paths like "C:\fakepath\photo.png" and Excel path prefixes like "images/photo.png" */
+  function normalizeImageKey(name: string): string {
+    return name.trim().replace(/^.*[/\\]/, '').toLowerCase();
+  }
+
   function addImageFiles(files: FileList | File[]) {
     const arr = Array.from(files);
     const imageOnly = arr.filter((f) => /\.(jpe?g|png|webp|gif)$/i.test(f.name));
     if (imageOnly.length === 0) return;
     setImageFiles((prev) => {
       const next = new Map(prev);
-      imageOnly.forEach((f) => next.set(f.name.toLowerCase(), f));
+      imageOnly.forEach((f) => next.set(normalizeImageKey(f.name), f));
       return next;
     });
   }
@@ -127,7 +197,7 @@ export function BulkUpload() {
   function removeImageFile(filename: string) {
     setImageFiles((prev) => {
       const next = new Map(prev);
-      next.delete(filename.toLowerCase());
+      next.delete(normalizeImageKey(filename));
       return next;
     });
   }
@@ -175,10 +245,13 @@ export function BulkUpload() {
   }, []);
 
   if (rows.length > 0 && summary) {
-    // Count how many rows have local image refs that need matching
-    const rowsWithLocalImages = rows.filter((r) => r.localImageRefs.length > 0);
-    const allLocalRefs = [...new Set(rowsWithLocalImages.flatMap((r) => r.localImageRefs))];
-    const missingRefs = allLocalRefs.filter((ref) => !imageFiles.has(ref.toLowerCase()));
+    // Count how many rows have local image refs that need matching.
+    // Exclude embedded-image synthetic refs (__emb__*) — those are already in imageFiles.
+    const rowsWithLocalImages = rows.filter((r) => r.localImageRefs.some((ref) => !ref.startsWith('__emb__')));
+    const allLocalRefs = [...new Set(rowsWithLocalImages.flatMap((r) => r.localImageRefs.filter((ref) => !ref.startsWith('__emb__'))))];
+    const missingRefs = allLocalRefs.filter((ref) => !imageFiles.has(normalizeImageKey(ref)));
+    // Count embedded images separately for summary display
+    const embeddedImageCount = rows.reduce((sum, r) => sum + r.localImageRefs.filter((ref) => ref.startsWith('__emb__')).length, 0);
 
     return (
       <div className="w-full max-w-3xl mx-auto space-y-4">
@@ -190,6 +263,17 @@ export function BulkUpload() {
           <span className="text-gray-300">·</span>
           <span>{rows.length} producto{rows.length !== 1 ? 's' : ''} procesado{rows.length !== 1 ? 's' : ''}</span>
         </div>
+
+        {/* Embedded images banner — shown when images were extracted from Excel drawing objects */}
+        {embeddedImageCount > 0 && (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 px-4 py-3 flex items-center gap-2 text-sm text-emerald-800">
+            <ImagePlus size={15} className="text-emerald-600 shrink-0" />
+            <span>
+              <span className="font-semibold">Imágenes embebidas detectadas:</span>{' '}
+              {embeddedImageCount} imagen{embeddedImageCount !== 1 ? 'es' : ''} extraída{embeddedImageCount !== 1 ? 's' : ''} del Excel — no necesitás subir archivos separados.
+            </span>
+          </div>
+        )}
 
         {/* Image upload panel — only shown when Excel references local image filenames */}
         {allLocalRefs.length > 0 && (
@@ -238,7 +322,7 @@ export function BulkUpload() {
             {imageFiles.size > 0 && (
               <div className="space-y-1">
                 {allLocalRefs.map((ref) => {
-                  const found = imageFiles.has(ref.toLowerCase());
+                  const found = imageFiles.has(normalizeImageKey(ref));
                   return (
                     <div key={ref} className={cn(
                       'flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs',
@@ -260,7 +344,7 @@ export function BulkUpload() {
                 })}
                 {/* Extra uploaded files not referenced in Excel */}
                 {Array.from(imageFiles.keys())
-                  .filter((k) => !allLocalRefs.map((r) => r.toLowerCase()).includes(k))
+                  .filter((k) => !allLocalRefs.map((r) => normalizeImageKey(r)).includes(k))
                   .map((k) => (
                     <div key={k} className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs bg-gray-50 border border-gray-200 text-gray-500">
                       <span className="font-mono flex-1 truncate">{k}</span>
@@ -273,6 +357,44 @@ export function BulkUpload() {
               </div>
             )}
           </div>
+        )}
+
+        {/* Debug panel — shows raw upload vs Excel ref matching so the user can diagnose filename mismatches */}
+        {(imageFiles.size > 0 || allLocalRefs.length > 0) && (
+          <details className="rounded-xl border border-gray-200 bg-gray-50/80 p-3 text-xs open:pb-3">
+            <summary className="cursor-pointer select-none font-medium text-gray-500 hover:text-gray-700">
+              Imágenes detectadas — {imageFiles.size} subida{imageFiles.size !== 1 ? 's' : ''}, {allLocalRefs.length - missingRefs.length}/{allLocalRefs.length} reconocida{allLocalRefs.length !== 1 ? 's' : ''}
+            </summary>
+            <div className="mt-3 space-y-3">
+              {imageFiles.size > 0 && (
+                <div>
+                  <p className="font-semibold text-gray-600 mb-1">Archivos subidos (clave de búsqueda):</p>
+                  <div className="space-y-0.5 pl-2">
+                    {Array.from(imageFiles.keys()).map((k) => (
+                      <p key={k} className="font-mono text-gray-700">{k}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {allLocalRefs.length > 0 && (
+                <div>
+                  <p className="font-semibold text-gray-600 mb-1">Referencias del Excel (clave normalizada → resultado):</p>
+                  <div className="space-y-0.5 pl-2">
+                    {allLocalRefs.map((ref) => {
+                      const key = normalizeImageKey(ref);
+                      const matched = imageFiles.has(key);
+                      return (
+                        <p key={ref} className={`font-mono ${matched ? 'text-emerald-700' : 'text-red-600'}`}>
+                          {ref === key ? ref : `${ref} → ${key}`}
+                          {' '}{matched ? '✓ coincide' : '✗ no encontrada'}
+                        </p>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </details>
         )}
 
         <BulkResults

@@ -4,6 +4,8 @@ import { buildProductDraft, buildMLPayload } from '@/lib/payload-builder';
 import { validateDraft } from '@/lib/validation';
 import { CSV_COLUMNS } from './template';
 import type { MLPayload, MissingField } from '@/types';
+import { extractEmbeddedImages, type EmbeddedImage } from '@/lib/excel/extract-embedded-images';
+export type { EmbeddedImage };
 
 export interface CsvRowResult {
   rowIndex: number;           // 1-based, excluding header
@@ -144,7 +146,9 @@ const LEGACY_HEADERS: Record<string, string> = {
  */
 export function isLocalImageFilename(s: string): boolean {
   if (!s || s.startsWith('http://') || s.startsWith('https://')) return false;
-  return /\.(jpe?g|png|webp|gif)$/i.test(s.trim());
+  // Use basename so "images/photo.png" is treated the same as "photo.png"
+  const basename = s.trim().replace(/^.*[/\\]/, '');
+  return /\.(jpe?g|png|webp|gif)$/i.test(basename) && basename.length > 0;
 }
 
 /**
@@ -299,20 +303,34 @@ function extractProductType(row: Record<string, string>): ApplianceType | undefi
   return normalizeProductType(raw);
 }
 
+export interface XlsxParseResult {
+  csv: string;
+  /**
+   * Images extracted from Excel drawing objects (Insert → Pictures).
+   * Key = 1-based product row index (header is row 0, first product is row 1).
+   * Value = array of images anchored to that row.
+   * Empty map when the workbook has no embedded drawings.
+   */
+  perRowImages: Map<number, EmbeddedImage[]>;
+}
+
 /**
- * Parse an Excel (.xlsx / .xls) ArrayBuffer into CSV text for processing.
- * Uses the xlsx library (already in package.json).
+ * Parse an Excel (.xlsx / .xls) ArrayBuffer.
+ * Returns the first sheet as CSV text and any images embedded via Excel's
+ * native drawing mechanism (extracted from xl/media/ + xl/drawings/).
  */
-export async function parseXlsxBuffer(buffer: ArrayBuffer): Promise<string> {
+export async function parseXlsxBuffer(buffer: ArrayBuffer): Promise<XlsxParseResult> {
   const XLSX = await import('xlsx');
   const wb = XLSX.read(buffer, { type: 'array' });
 
-  // Use the first sheet
   const sheetName = wb.SheetNames[0];
   const ws = wb.Sheets[sheetName];
+  const csv = XLSX.utils.sheet_to_csv(ws);
 
-  // Convert to CSV text — parseCsvText handles the rest
-  return XLSX.utils.sheet_to_csv(ws);
+  // Extract images from Excel drawing objects (parallel with CSV parse)
+  const { rowImages: perRowImages } = await extractEmbeddedImages(buffer);
+
+  return { csv, perRowImages };
 }
 
 export async function parseCsvText(text: string): Promise<CsvParseResult> {
