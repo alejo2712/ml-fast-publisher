@@ -263,7 +263,7 @@ async function main() {
   console.log('\n── Parser validation ────────────────────────────────────────────');
   const fileBuffer = fs.readFileSync(outPath);
   const ab = fileBuffer.buffer.slice(fileBuffer.byteOffset, fileBuffer.byteOffset + fileBuffer.byteLength) as ArrayBuffer;
-  const csvText = await parseXlsxBuffer(ab);
+  const { csv: csvText } = await parseXlsxBuffer(ab);
   const result = await parseCsvText(csvText);
 
   console.log(`Rows: ${result.rows.length} (${result.totalOk} ok, ${result.totalWarnings} warnings, ${result.totalErrors} errors)`);

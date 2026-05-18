@@ -15,8 +15,9 @@ import * as fs from 'fs';
 import { parseCsvText, parseXlsxBuffer } from '../src/lib/csv/parser';
 import { extractEmbeddedImages } from '../src/lib/excel/extract-embedded-images';
 
-const IMAGES_DIR = path.resolve(__dirname, '../tests/fixtures/images');
-const OUT_PATH    = path.resolve(__dirname, '../tests/fixtures/ml-real-publish-embedded.xlsx');
+const IMAGES_DIR    = path.resolve(__dirname, '../tests/fixtures/images');
+const OUT_PATH      = path.resolve(__dirname, '../tests/fixtures/ml-real-publish-embedded.xlsx');
+const SINGLE_FILE_PATH = path.resolve(__dirname, '../tests/fixtures/ml-real-publish-single-file.xlsx');
 
 const HEADERS = [
   'titulo', 'descripcion_corta', 'tipo_producto', 'marca', 'modelo', 'condicion',
@@ -228,8 +229,11 @@ async function main() {
   // ── Step 3: Write final xlsx ─────────────────────────────────────────────
   const finalBuf = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
   fs.writeFileSync(OUT_PATH, finalBuf);
+  // Also write as the canonical single-file fixture name
+  fs.writeFileSync(SINGLE_FILE_PATH, finalBuf);
   const sizeMb = (finalBuf.length / 1024 / 1024).toFixed(2);
   console.log(`\n✅ Generated: ${OUT_PATH} (${sizeMb} MB)`);
+  console.log(`✅ Generated: ${SINGLE_FILE_PATH} (${sizeMb} MB)`);
 
   // ── Step 4: Extraction validation ────────────────────────────────────────
   console.log('\n── Extraction validation ─────────────────────────────────────────');

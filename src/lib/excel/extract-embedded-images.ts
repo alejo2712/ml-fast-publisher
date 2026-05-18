@@ -127,7 +127,7 @@ export async function extractEmbeddedImages(
 
   const drawingRelsXml = await drawingRelsFile.async('string');
   const rIdToMedia = new Map<string, string>();
-  for (const m of matchAll(drawingRelsXml, /Id="(rId\d+)"[^>]*Target="([^"]+)"/)) {
+  for (const m of matchAll(drawingRelsXml, /Id="([^"]+)"[^>]*Target="([^"]+)"/)) {
     const target = m[2]; // "../media/image1.png"
     const mediaPath = 'xl/media/' + target.replace(/^.*\//, '');
     rIdToMedia.set(m[1], mediaPath);
@@ -140,18 +140,36 @@ export async function extractEmbeddedImages(
   const drawingXml = await drawingFile.async('string');
   const rowImages = new Map<number, EmbeddedImage[]>();
 
-  const anchorRe = /<xdr:(?:twoCellAnchor|oneCellAnchor)[^>]*>([\s\S]*?)<\/xdr:(?:twoCellAnchor|oneCellAnchor)>/g;
-  for (const anchor of matchAll(drawingXml, anchorRe)) {
-    const content = anchor[1];
+  // Collect all anchors: twoCellAnchor, oneCellAnchor, absoluteAnchor
+  const anchorRe = /<xdr:(?:twoCellAnchor|oneCellAnchor|absoluteAnchor)[^>]*>([\s\S]*?)<\/xdr:(?:twoCellAnchor|oneCellAnchor|absoluteAnchor)>/g;
+  const anchors = matchAll(drawingXml, anchorRe);
 
-    // <xdr:from> contains the first <xdr:row> — 0-indexed worksheet row
+  // First pass: extract all anchors with resolved rows (twoCellAnchor / oneCellAnchor)
+  // to build a sorted list for nearest-row fallback used by absoluteAnchor images.
+  const resolvedRows: number[] = [];
+
+  const anchorData: Array<{ content: string; fromRow: number | null }> = anchors.map((anchor) => {
+    const content = anchor[1];
     const fromBlock = /<xdr:from>([\s\S]*?)<\/xdr:from>/.exec(content)?.[1] ?? '';
     const fromRowStr = /<xdr:row>(\d+)<\/xdr:row>/.exec(fromBlock)?.[1];
-    if (fromRowStr === undefined) continue;
-    const fromRow = parseInt(fromRowStr, 10); // 0 = header row, 1 = first product
+    const fromRow = fromRowStr !== undefined ? parseInt(fromRowStr, 10) : null;
+    if (fromRow !== null && fromRow >= 1) resolvedRows.push(fromRow);
+    return { content, fromRow };
+  });
 
-    // rId from blipFill
-    const rId = /r:embed="(rId\d+)"/.exec(content)?.[1];
+  resolvedRows.sort((a, b) => a - b);
+
+  for (const { content, fromRow: rawFromRow } of anchorData) {
+    let fromRow = rawFromRow;
+
+    if (fromRow === null) {
+      // absoluteAnchor: fall back to the smallest resolved product row (≥ 1) seen so far,
+      // or use 1 if none have been seen yet.
+      fromRow = resolvedRows.length > 0 ? resolvedRows[0] : 1;
+    }
+
+    // rId from blipFill — allow any rId string (not just rId\d+)
+    const rId = /r:embed="([^"]+)"/.exec(content)?.[1];
     if (!rId) continue;
 
     const mediaPath = rIdToMedia.get(rId);
@@ -160,8 +178,7 @@ export async function extractEmbeddedImages(
     const imgData = mediaFiles.get(mediaPath);
     if (!imgData) continue;
 
-    // Drawing row 0 = Excel header → product row 1 = drawing row 1
-    // So productRowIndex (1-based) = fromRow
+    // Drawing row 0 = Excel header; product row index (1-based) = fromRow
     const productRowIndex = fromRow;
     if (productRowIndex < 1) continue; // skip header-anchored images
 

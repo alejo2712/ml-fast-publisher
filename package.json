@@ -19,6 +19,7 @@
     "gen:fixture:https": "npx tsx scripts/generate-https-publish-test.ts",
     "gen:fixture:embedded": "npx tsx scripts/generate-embedded-publish-test.ts",
     "test:embedded-images": "npx tsx scripts/test-embedded-images.ts",
+    "test:embedded-excel": "npx tsx scripts/test-embedded-excel.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

@@ -573,7 +573,11 @@ function RowDetail({ row, publishState, mlImageUrls, imageUploadErrors, imageFil
             </span>
             <span className="col-span-2">
               <span className="text-gray-400">Imágenes:</span>{' '}
-              {row.localImageRefs.length > 0 ? (
+              {row.localImageRefs.length > 0 && row.localImageRefs.every((r) => r.startsWith('__emb__')) ? (
+                <span className="text-emerald-700">
+                  Imágenes embebidas: {row.localImageRefs.length} detectada{row.localImageRefs.length !== 1 ? 's' : ''} ✓
+                </span>
+              ) : row.localImageRefs.length > 0 ? (
                 <>
                   {row.localImageRefs.filter((r) => imageFiles?.has(normalizeImageKey(r))).length}/{row.localImageRefs.length} listas para subir a ML CDN
                   {row.localImageRefs.some((r) => !imageFiles?.has(normalizeImageKey(r))) && (

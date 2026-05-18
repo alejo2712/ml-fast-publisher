@@ -157,7 +157,7 @@ async function main() {
 
   if (fs.existsSync(FIXTURE_PATH)) {
     const buf = fs.readFileSync(FIXTURE_PATH);
-    const csv = await parseXlsxBuffer(buf.buffer as ArrayBuffer);
+    const { csv } = await parseXlsxBuffer(buf.buffer as ArrayBuffer);
     const result = await parseCsvText(csv);
 
     assert(result.rows.length === 2, '2 rows parsed from fixture');

@@ -245,10 +245,13 @@ export function BulkUpload() {
   }, []);
 
   if (rows.length > 0 && summary) {
-    // Count how many rows have local image refs that need matching
-    const rowsWithLocalImages = rows.filter((r) => r.localImageRefs.length > 0);
-    const allLocalRefs = [...new Set(rowsWithLocalImages.flatMap((r) => r.localImageRefs))];
+    // Count how many rows have local image refs that need matching.
+    // Exclude embedded-image synthetic refs (__emb__*) — those are already in imageFiles.
+    const rowsWithLocalImages = rows.filter((r) => r.localImageRefs.some((ref) => !ref.startsWith('__emb__')));
+    const allLocalRefs = [...new Set(rowsWithLocalImages.flatMap((r) => r.localImageRefs.filter((ref) => !ref.startsWith('__emb__'))))];
     const missingRefs = allLocalRefs.filter((ref) => !imageFiles.has(normalizeImageKey(ref)));
+    // Count embedded images separately for summary display
+    const embeddedImageCount = rows.reduce((sum, r) => sum + r.localImageRefs.filter((ref) => ref.startsWith('__emb__')).length, 0);
 
     return (
       <div className="w-full max-w-3xl mx-auto space-y-4">
@@ -260,6 +263,17 @@ export function BulkUpload() {
           <span className="text-gray-300">·</span>
           <span>{rows.length} producto{rows.length !== 1 ? 's' : ''} procesado{rows.length !== 1 ? 's' : ''}</span>
         </div>
+
+        {/* Embedded images banner — shown when images were extracted from Excel drawing objects */}
+        {embeddedImageCount > 0 && (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 px-4 py-3 flex items-center gap-2 text-sm text-emerald-800">
+            <ImagePlus size={15} className="text-emerald-600 shrink-0" />
+            <span>
+              <span className="font-semibold">Imágenes embebidas detectadas:</span>{' '}
+              {embeddedImageCount} imagen{embeddedImageCount !== 1 ? 'es' : ''} extraída{embeddedImageCount !== 1 ? 's' : ''} del Excel — no necesitás subir archivos separados.
+            </span>
+          </div>
+        )}
 
         {/* Image upload panel — only shown when Excel references local image filenames */}
         {allLocalRefs.length > 0 && (
