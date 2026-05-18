@@ -18,6 +18,7 @@
     "gen:images": "npx tsx scripts/generate-test-images.ts",
     "gen:fixture:https": "npx tsx scripts/generate-https-publish-test.ts",
     "gen:fixture:embedded": "npx tsx scripts/generate-embedded-publish-test.ts",
+    "gen:fixture:final": "npx tsx scripts/generate-final-with-images.ts",
     "test:embedded-images": "npx tsx scripts/test-embedded-images.ts",
     "test:embedded-excel": "npx tsx scripts/test-embedded-excel.ts",
     "test:category-guard": "npx tsx scripts/test-category-guard.ts",
