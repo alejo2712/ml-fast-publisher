@@ -6,12 +6,35 @@ import type { MLBulkPublishResult, MLPublishResult } from '@/lib/mercadolibre/ty
 import type { ProductDraft } from '@/types';
 import {
   CheckCircle2, AlertTriangle, XCircle, Download, ChevronDown, ChevronRight,
-  Send, FlaskConical, Loader2, Clock, Pencil, X, Check, ShieldOff, ExternalLink, Hash, SkipForward, Eye,
+  Send, FlaskConical, Loader2, Clock, Pencil, X, Check, ShieldOff, ExternalLink, Hash, SkipForward, Eye, ImageIcon,
 } from 'lucide-react';
 import type { PrepareItemResult } from '@/app/api/ml/prepare-publish/route';
 import { useState, useEffect, useCallback, useRef, memo } from 'react';
 import { cn } from '@/components/ui';
 import { JsonPreview } from '@/components/JsonPreview';
+
+// ─── Image upload detail ─────────────────────────────────────────────────────
+
+export interface ImageUploadDetail {
+  filename: string;
+  secureUrl?: string;
+  error?: string;
+  width?: number;
+  height?: number;
+}
+
+/** Read PNG dimensions from a File object (client-side, no deps). Returns null for non-PNG or unreadable. */
+async function readPngDimensions(file: File): Promise<{ width: number; height: number } | null> {
+  try {
+    const buf = await file.arrayBuffer();
+    if (buf.byteLength < 24) return null;
+    const view = new DataView(buf);
+    if (view.getUint32(0) !== 0x89504e47 || view.getUint32(4) !== 0x0d0a1a0a) return null;
+    return { width: view.getUint32(16), height: view.getUint32(20) };
+  } catch {
+    return null;
+  }
+}
 
 const CONDITION_LABELS: Record<string, string> = {
   new: 'Nuevo', used: 'Usado', refurbished: 'Reacondicionado',
@@ -354,9 +377,11 @@ interface RowDetailProps {
   imageFiles?: Map<string, File>;
   /** Result from /api/ml/prepare-publish — shows the actual final payload diff before publishing */
   prepareResult?: PrepareItemResult;
+  /** Per-filename upload details: CDN URL, error, and dimensions — set after prepare runs */
+  imageUploadDetails?: Map<string, ImageUploadDetail>;
 }
 
-function RowDetail({ row, publishState, mlImageUrls, imageUploadErrors, imageFiles, prepareResult }: RowDetailProps) {
+function RowDetail({ row, publishState, mlImageUrls, imageUploadErrors, imageFiles, prepareResult, imageUploadDetails }: RowDetailProps) {
   const [showPayload, setShowPayload] = useState(false);
   const [showRawResponse, setShowRawResponse] = useState(false);
 
@@ -396,37 +421,69 @@ function RowDetail({ row, publishState, mlImageUrls, imageUploadErrors, imageFil
         </div>
       )}
 
-      {/* Local image status — shown when row references local image filenames */}
+      {/* Image status panel — shown when row has any image refs (embedded or local) */}
       {row.localImageRefs.length > 0 && (
         <div className="space-y-1">
-          <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Imágenes locales</p>
-          {row.localImageRefs.map((ref) => {
-            const mlUrl = mlImageUrls?.get(ref.toLowerCase());
-            const uploadError = imageUploadErrors?.get(ref);
+          <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide flex items-center gap-1">
+            <ImageIcon size={11} />
+            Imágenes
+            <span className="font-normal text-gray-300 ml-1">
+              {row.localImageRefs.filter((r) => r.startsWith('__emb__')).length > 0 && '(embebidas en Excel)'}
+            </span>
+          </p>
+          {row.localImageRefs.map((ref, idx) => {
+            const key = ref.toLowerCase();
+            const detail = imageUploadDetails?.get(key);
+            const mlUrl = detail?.secureUrl ?? mlImageUrls?.get(key);
+            const uploadError = detail?.error ?? imageUploadErrors?.get(ref);
+            const isEmbedded = ref.startsWith('__emb__');
             const isMatched = imageFiles?.has(normalizeImageKey(ref));
+            const dims = detail?.width && detail?.height ? `${detail.width}×${detail.height}` : null;
+            const dimsOk = detail?.width != null && detail.width >= 500 && detail.height != null && detail.height >= 500;
+            const displayName = isEmbedded ? `Imagen ${idx + 1}` : ref;
+
             return (
               <div key={ref} className={cn(
-                'flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs',
+                'rounded-lg px-2.5 py-2 text-xs space-y-1',
                 mlUrl ? 'bg-emerald-50 border border-emerald-200 text-emerald-800' :
                 uploadError ? 'bg-red-50 border border-red-200 text-red-700' :
-                isMatched ? 'bg-indigo-50 border border-indigo-200 text-indigo-800' :
+                isMatched || isEmbedded ? 'bg-indigo-50 border border-indigo-200 text-indigo-800' :
                 'bg-red-50 border border-red-200 text-red-700'
               )}>
-                <span className="font-mono flex-1 truncate">{ref}</span>
-                {mlUrl ? (
-                  <a href={mlUrl} target="_blank" rel="noreferrer" className="text-emerald-600 font-medium shrink-0 underline flex items-center gap-1">
-                    <ExternalLink size={10} />ML CDN
-                  </a>
-                ) : uploadError ? (
-                  <span className="text-red-600 font-medium shrink-0">{uploadError}</span>
-                ) : isMatched ? (
-                  <span className="text-indigo-600 font-medium shrink-0 flex items-center gap-1">
-                    <CheckCircle2 size={10} />Lista para subir
-                  </span>
-                ) : (
-                  <span className="text-red-600 font-medium shrink-0 flex items-center gap-1">
-                    <XCircle size={10} />Arrastrá el archivo
-                  </span>
+                <div className="flex items-center gap-2">
+                  <span className="font-medium shrink-0">{displayName}</span>
+                  {dims && (
+                    <span className={cn(
+                      'text-[10px] rounded px-1.5 py-0.5 font-mono shrink-0',
+                      dimsOk ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                    )}>
+                      {dims} px{!dimsOk && ' ⚠ min 500×500'}
+                    </span>
+                  )}
+                  <div className="flex-1" />
+                  {mlUrl ? (
+                    <a href={mlUrl} target="_blank" rel="noreferrer" className="text-emerald-600 font-medium shrink-0 underline flex items-center gap-1">
+                      <ExternalLink size={10} />ML CDN ✓
+                    </a>
+                  ) : uploadError ? (
+                    <span className="text-red-600 font-medium shrink-0 flex items-center gap-1">
+                      <XCircle size={10} />Error al subir
+                    </span>
+                  ) : isEmbedded || isMatched ? (
+                    <span className="text-indigo-600 font-medium shrink-0 flex items-center gap-1">
+                      <CheckCircle2 size={10} />Lista para subir
+                    </span>
+                  ) : (
+                    <span className="text-red-600 font-medium shrink-0 flex items-center gap-1">
+                      <XCircle size={10} />Faltante
+                    </span>
+                  )}
+                </div>
+                {uploadError && (
+                  <p className="text-red-700 text-[11px] leading-relaxed pl-0.5">{uploadError}</p>
+                )}
+                {mlUrl && (
+                  <p className="font-mono text-[10px] text-emerald-600 truncate">{mlUrl}</p>
                 )}
               </div>
             );
@@ -793,6 +850,8 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
   const [prepareResults, setPrepareResults] = useState<Map<number, PrepareItemResult>>(new Map());
   const [isPreparing, setIsPreparing] = useState(false);
   const [prepareError, setPrepareError] = useState<string | null>(null);
+  // Per-filename (lowercase) upload details: CDN URL, error, dimensions
+  const [imageUploadDetails, setImageUploadDetails] = useState<Map<string, ImageUploadDetail>>(new Map());
 
   useEffect(() => {
     fetch('/api/ml/status')
@@ -854,18 +913,17 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
     const currentMlImageUrls = new Map(mlImageUrls);
     const currentImageErrors = new Map<string, string>();
 
-    if (localFilesToUpload.size > 0 && imageFiles && imageFiles.size > 0 && !mlDryRun) {
+    if (localFilesToUpload.size > 0 && imageFiles && imageFiles.size > 0) {
       setPublishStates((prev) => {
         const next = new Map(prev);
         publishableRows.forEach((r) => next.set(r.rowIndex, { status: 'publishing', message: 'Subiendo imágenes a Mercado Libre...' }));
         return next;
       });
 
-      // Build FormData with all local files that need uploading (skip already uploaded)
       const formData = new FormData();
       let hasFiles = false;
       for (const filename of localFilesToUpload) {
-        if (currentMlImageUrls.has(normalizeImageKey(filename))) continue; // already uploaded
+        if (currentMlImageUrls.has(normalizeImageKey(filename))) continue;
         const file = imageFiles.get(normalizeImageKey(filename));
         if (file) {
           formData.append('files', file, file.name);
@@ -878,6 +936,19 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
       if (hasFiles) {
         try {
           const uploadRes = await fetch('/api/ml/upload-pictures', { method: 'POST', body: formData });
+          if (!uploadRes.ok) {
+            const errBody = await uploadRes.json().catch(() => ({})) as { error?: string };
+            const msg = `Error al subir imágenes (${uploadRes.status}): ${errBody.error ?? 'Error del servidor'}`;
+            setPublishStates((prev) => {
+              const next = new Map(prev);
+              publishableRows.filter((r) => r.localImageRefs.length > 0).forEach((r) =>
+                next.set(r.rowIndex, { status: 'failed', message: msg })
+              );
+              return next;
+            });
+            setIsBulkPublishing(false);
+            return;
+          }
           const uploadData = await uploadRes.json() as {
             uploads: Array<{ filename: string; secureUrl: string }>;
             errors: Array<{ filename: string; error: string }>;
@@ -889,8 +960,25 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
             currentImageErrors.set(filename, error);
           });
           setMlImageUrls(new Map(currentMlImageUrls));
+
+          // If any image failed, mark those rows as failed
+          if (uploadData.errors.length > 0) {
+            setPublishStates((prev) => {
+              const next = new Map(prev);
+              publishableRows.forEach((r) => {
+                const hasFailedImage = r.localImageRefs.some((ref) => currentImageErrors.has(ref));
+                if (hasFailedImage) {
+                  const errList = r.localImageRefs
+                    .filter((ref) => currentImageErrors.has(ref))
+                    .map((ref) => `${ref}: ${currentImageErrors.get(ref)}`)
+                    .join('; ');
+                  next.set(r.rowIndex, { status: 'failed', message: `Error subiendo imagen: ${errList}` });
+                }
+              });
+              return next;
+            });
+          }
         } catch (err) {
-          // Network error uploading images — mark all local-image rows as failed
           const msg = `Error subiendo imágenes: ${err instanceof Error ? err.message : 'Error de red'}`;
           setPublishStates((prev) => {
             const next = new Map(prev);
@@ -1060,33 +1148,81 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
     setPrepareError(null);
     setIsPreparing(true);
     setPrepareResults(new Map());
+    setImageUploadDetails(new Map());
 
-    // ── Step 1: Upload local image files to ML CDN ────────────────────────────
+    // ── Step 1: Upload all local/embedded image files to ML CDN ──────────────
     const localFilesToUpload = new Set<string>();
     publishableRows.forEach((r) => r.localImageRefs.forEach((ref) => localFilesToUpload.add(ref)));
 
     const currentMlImageUrls = new Map(mlImageUrls);
+    const newUploadDetails = new Map<string, ImageUploadDetail>();
 
-    if (localFilesToUpload.size > 0 && imageFiles && imageFiles.size > 0 && !mlDryRun) {
+    if (localFilesToUpload.size > 0 && imageFiles && imageFiles.size > 0) {
+      // Read dimensions for all local files async before uploading
+      const dimReads: Promise<void>[] = [];
+      for (const filename of localFilesToUpload) {
+        const key = normalizeImageKey(filename);
+        if (currentMlImageUrls.has(key)) continue;
+        const file = imageFiles.get(key);
+        if (file) {
+          dimReads.push(
+            readPngDimensions(file).then((dims) => {
+              newUploadDetails.set(key, { filename, ...(dims ?? {}) });
+            })
+          );
+        }
+      }
+      await Promise.all(dimReads);
+
       const formData = new FormData();
       let hasFiles = false;
       for (const filename of localFilesToUpload) {
-        if (currentMlImageUrls.has(normalizeImageKey(filename))) continue;
-        const file = imageFiles.get(normalizeImageKey(filename));
+        const key = normalizeImageKey(filename);
+        if (currentMlImageUrls.has(key)) continue;
+        const file = imageFiles.get(key);
         if (file) { formData.append('files', file, file.name); hasFiles = true; }
       }
+
       if (hasFiles) {
         try {
           const uploadRes = await fetch('/api/ml/upload-pictures', { method: 'POST', body: formData });
+          if (!uploadRes.ok) {
+            const err = await uploadRes.json().catch(() => ({})) as { error?: string };
+            const msg = err.error ?? `Error del servidor (${uploadRes.status})`;
+            setImageUploadDetails(new Map(newUploadDetails));
+            setPrepareError(`Error al subir imágenes a Mercado Libre CDN: ${msg}. Verificá la conexión ML en Configuración → Mercado Libre.`);
+            setIsPreparing(false);
+            return;
+          }
           const uploadData = await uploadRes.json() as {
             uploads: Array<{ filename: string; secureUrl: string }>;
             errors: Array<{ filename: string; error: string }>;
           };
-          uploadData.uploads.forEach(({ filename, secureUrl }) => {
-            currentMlImageUrls.set(filename.toLowerCase(), secureUrl);
-          });
+
+          for (const { filename, secureUrl } of uploadData.uploads) {
+            const key = filename.toLowerCase();
+            currentMlImageUrls.set(key, secureUrl);
+            newUploadDetails.set(key, { ...(newUploadDetails.get(key) ?? { filename }), secureUrl });
+          }
+          for (const { filename, error } of uploadData.errors) {
+            const key = filename.toLowerCase();
+            newUploadDetails.set(key, { ...(newUploadDetails.get(key) ?? { filename }), error });
+          }
+
+          setImageUploadDetails(new Map(newUploadDetails));
           setMlImageUrls(new Map(currentMlImageUrls));
+
+          // Block prepare if any required image failed to upload
+          if (uploadData.errors.length > 0) {
+            const failedLines = uploadData.errors.map(({ filename, error }) => `• ${filename}: ${error}`).join('\n');
+            setPrepareError(
+              `No se ${uploadData.errors.length === 1 ? 'pudo subir 1 imagen' : `pudieron subir ${uploadData.errors.length} imágenes`} a Mercado Libre CDN:\n${failedLines}\n\nMercado Libre debe poder acceder a las imágenes como URLs HTTPS públicas.`
+            );
+            setIsPreparing(false);
+            return;
+          }
         } catch (err) {
+          setImageUploadDetails(new Map(newUploadDetails));
           setPrepareError(`Error subiendo imágenes: ${err instanceof Error ? err.message : 'Error de red'}`);
           setIsPreparing(false);
           return;
@@ -1550,6 +1686,7 @@ export function BulkResults({ rows, totalOk, totalWarnings, totalErrors, onReset
                   imageUploadErrors={imageUploadErrors}
                   imageFiles={imageFiles}
                   prepareResult={prepareResults.get(row.rowIndex)}
+                  imageUploadDetails={imageUploadDetails}
                 />
               )}
             </div>

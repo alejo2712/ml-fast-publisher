@@ -22,6 +22,8 @@
     "test:embedded-images": "npx tsx scripts/test-embedded-images.ts",
     "test:embedded-excel": "npx tsx scripts/test-embedded-excel.ts",
     "test:category-guard": "npx tsx scripts/test-category-guard.ts",
+    "test:image-requirements": "npx tsx scripts/test-image-requirements.ts",
+    "gen:fixture:production": "npx tsx scripts/generate-production-fixture.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

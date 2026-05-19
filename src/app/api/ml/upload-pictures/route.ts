@@ -14,7 +14,7 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
-import { getCredentials } from '@/lib/mercadolibre/auth';
+import { getCredentials, refreshAccessToken } from '@/lib/mercadolibre/auth';
 import { uploadPictureToML } from '@/lib/mercadolibre/pictures';
 import { logger } from '@/lib/logger';
 
@@ -28,7 +28,8 @@ export async function POST(request: NextRequest) {
   }
   const userId = session.user.id;
 
-  if (!getCredentials()) {
+  const credentials = getCredentials();
+  if (!credentials) {
     return NextResponse.json({ error: 'ML credentials not configured.' }, { status: 503 });
   }
 
@@ -40,7 +41,31 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const accessToken = dbAccount.accessToken;
+  let accessToken = dbAccount.accessToken;
+
+  if (dbAccount.expiresAt.getTime() - Date.now() < 5 * 60 * 1000) {
+    if (!dbAccount.refreshToken) {
+      return NextResponse.json({ error: 'Token vencido sin refresh token. Reconectá la cuenta.' }, { status: 401 });
+    }
+    try {
+      const refreshed = await refreshAccessToken(
+        { accessToken, refreshToken: dbAccount.refreshToken, expiresAt: dbAccount.expiresAt.getTime(), userId: dbAccount.mlUserId },
+        credentials
+      );
+      const updateData: { accessToken: string; expiresAt: Date; refreshToken?: string } = {
+        accessToken: refreshed.accessToken,
+        expiresAt: new Date(refreshed.expiresAt),
+      };
+      if (refreshed.refreshToken) updateData.refreshToken = refreshed.refreshToken;
+      await prisma.mercadoLibreAccount.update({
+        where: { userId_siteId: { userId, siteId: credentials.siteId } },
+        data: updateData,
+      });
+      accessToken = refreshed.accessToken;
+    } catch (err) {
+      return NextResponse.json({ error: err instanceof Error ? err.message : 'Token refresh failed' }, { status: 401 });
+    }
+  }
 
   let formData: FormData;
   try {
